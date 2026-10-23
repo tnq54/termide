@@ -19,3 +19,12 @@ CREATE TABLE IF NOT EXISTS events (
     payload BLOB
 );
 CREATE INDEX IF NOT EXISTS events_workspace_sequence ON events(workspace_id, sequence);
+CREATE TABLE IF NOT EXISTS agents (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks(id),
+    role TEXT NOT NULL,
+    status TEXT NOT NULL,
+    branch TEXT,
+    worktree TEXT,
+    summary TEXT
+);

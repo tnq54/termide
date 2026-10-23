@@ -65,4 +65,22 @@ func (s *Store) EventsAfter(ctx context.Context, workspaceID string, sequence ui
 	return out, rows.Err()
 }
 
+func (s *Store) UpsertAgent(ctx context.Context, a domain.Agent) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO agents(id,task_id,role,status,branch,worktree,summary) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role,status=excluded.status,branch=excluded.branch,worktree=excluded.worktree,summary=excluded.summary`, a.ID, a.TaskID, a.Role, a.Status, a.Branch, a.Worktree, a.Summary)
+	return err
+}
+
+func (s *Store) ListAgents(ctx context.Context, taskID string) ([]domain.Agent, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,task_id,role,status,COALESCE(branch,''),COALESCE(worktree,''),COALESCE(summary,'') FROM agents WHERE task_id=? ORDER BY id`, taskID)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	var agents []domain.Agent
+	for rows.Next() {
+		var a domain.Agent
+		if err := rows.Scan(&a.ID, &a.TaskID, &a.Role, &a.Status, &a.Branch, &a.Worktree, &a.Summary); err != nil { return nil, err }
+		agents = append(agents, a)
+	}
+	return agents, rows.Err()
+}
+
 func (s *Store) String() string { return fmt.Sprintf("Store(%p)", s) }
