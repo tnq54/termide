@@ -2,6 +2,9 @@
 
 ## Đã kiểm chứng
 
+- Editor từ xa: duyệt/mở/sửa/lưu qua server, version check, báo conflict,
+  undo/redo Unicode và viewport điện thoại; xem `docs/remote-editor.md`.
+
 - TUI nhận mô tả task bằng bàn phím, gồm tiếng Việt; phím tắt không chặn chữ khi nhập.
 - Framing đọc liên tiếp nhiều message không mất frame.
 - `termide-server --stdio` phục vụ nhiều request trên stdin/stdout.
@@ -27,7 +30,8 @@
 - Vòng stdio chưa dispatch start_task vào runner; chưa có agent chạy từ TUI.
 - Worktree đã nối với runtime qua IsolatedRunner; chưa dispatch từ vòng stdio.
 - Chưa nối approvals và event replay vào toàn bộ vòng đời task phía TUI.
-- Chưa có daemon giữ task sống qua ngắt SSH, editor remote và LSP tích hợp đầy đủ.
+- Chưa có daemon giữ task sống qua ngắt SSH; editor remote có luồng cơ bản,
+  nhưng chưa nhiều tab, syntax highlighting hoặc LSP tích hợp.
 - Các mục ghi “complete” trong ledger cũ chỉ thể hiện test nhỏ của từng module,
   không chứng minh toàn bộ task/milestone tương ứng đã hoàn tất.
 

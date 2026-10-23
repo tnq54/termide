@@ -28,6 +28,8 @@ func (h *Handler) HandleWithAgents(ctx context.Context, message protocol.Message
 }
 func (h *Handler) Handle(ctx context.Context, message protocol.Message) (protocol.Message, error) {
 	switch message.Type {
+	case protocol.MessageListFiles, protocol.MessageReadFile, protocol.MessageSaveFile:
+		return h.handleFiles(ctx, message)
 	case protocol.MessageOpenWorkspace:
 		return h.openWorkspace(ctx, message)
 	case protocol.MessageCreateTask:

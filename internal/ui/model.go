@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"termide/internal/protocol"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -31,14 +32,17 @@ type Model struct {
 	workspace       workspaceConfig
 	ready           bool
 	saving          bool
+	files           fileEditor
 }
 
 func NewModel() Model {
-	return Model{Panel: PanelDashboard, Status: "disconnected", Project: "no project", VPS: "no vps"}
+	return Model{Panel: PanelDashboard, Status: "disconnected", Project: "no project", VPS: "no vps", files: newFileEditor()}
 }
 func (m Model) Init() tea.Cmd { return m.openRemoteWorkspace() }
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch value := msg.(type) {
+	case fileResult:
+		return m.receiveFile(value)
 	case remoteResult:
 		m.saving = false
 		if value.err != nil {
@@ -55,9 +59,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.Width, m.Height = value.Width, value.Height
+		m.files.input.SetWidth(max(1, value.Width))
+		m.files.input.SetHeight(max(1, value.Height-4))
 	case tea.KeyMsg:
 		if value.Type == tea.KeyCtrlC {
+			if m.files.busy && m.files.document != nil {
+				m.Status = "Save in progress; wait for server confirmation"
+				return m, nil
+			}
+			if m.files.dirty() {
+				m.Panel = PanelEditor
+				m.Status = "Unsaved changes: Ctrl+S save; Ctrl+G discard"
+				return m, nil
+			}
 			return m, tea.Quit
+		}
+		if m.Panel == PanelEditor {
+			return m.editorKey(value)
 		}
 		if m.Panel == PanelTask {
 			switch value.Type {
@@ -95,6 +113,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Panel = PanelDashboard
 		case "e":
 			m.Panel = PanelEditor
+			if m.remote != nil && m.ready && m.files.document == nil && !m.files.busy {
+				m.files.busy = true
+				return m, m.fileCommand(protocol.MessageListFiles, protocol.FileRequest{Path: m.files.folder})
+			}
 		case "a":
 			m.Panel = PanelAgents
 		case "t":
@@ -119,9 +141,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.TaskDescription += string(value.Runes)
 			}
 		}
+	default:
+		if m.Panel == PanelEditor && m.files.document != nil {
+			var cmd tea.Cmd
+			m.files.input, cmd = m.files.input.Update(msg)
+			return m, cmd
+		}
 	}
 	return m, nil
 }
 func (m Model) View() string {
+	if m.Panel == PanelEditor {
+		return m.editorView()
+	}
 	return fmt.Sprintf("TermIDE\nVPS: %s | Project: %s | Status: %s\nPanel: %s\nTask: %s\n[n]ew task [e]ditor [a]gents [t]erminal [f]iff [p]ermissions [q]uit\n", m.VPS, m.Project, m.Status, m.Panel, m.TaskDescription)
 }
