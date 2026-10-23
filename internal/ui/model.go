@@ -33,6 +33,7 @@ type Model struct {
 	ready           bool
 	saving          bool
 	files           fileEditor
+	dashboard       dashboardState
 }
 
 func NewModel() Model {
@@ -43,6 +44,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch value := msg.(type) {
 	case fileResult:
 		return m.receiveFile(value)
+	case dashboardResult:
+		return m.receiveDashboard(value)
 	case remoteResult:
 		m.saving = false
 		if value.err != nil {
@@ -52,6 +55,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if value.taskID == "" {
 			m.ready = true
 			m.Status = "connected"
+			if m.remote != nil {
+				return m, m.dashboardCommand(protocol.MessageListTasks, "", 0, 0)
+			}
 		} else {
 			m.TaskID = value.taskID
 			m.Status = "task queued"
@@ -76,6 +82,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.Panel == PanelEditor {
 			return m.editorKey(value)
+		}
+		if m.Panel == PanelAgents && m.dashboard.snapshot != nil {
+			return m.dashboardKey(value)
+		}
+		if m.Panel == PanelDashboard {
+			return m.dashboardKey(value)
 		}
 		if m.Panel == PanelTask {
 			switch value.Type {
@@ -153,6 +165,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	if m.Panel == PanelEditor {
 		return m.editorView()
+	}
+	if m.Panel == PanelDashboard || (m.Panel == PanelAgents && m.dashboard.snapshot != nil) {
+		return m.dashboardView()
 	}
 	return fmt.Sprintf("TermIDE\nVPS: %s | Project: %s | Status: %s\nPanel: %s\nTask: %s\n[n]ew task [e]ditor [a]gents [t]erminal [f]iff [p]ermissions [q]uit\n", m.VPS, m.Project, m.Status, m.Panel, m.TaskDescription)
 }
