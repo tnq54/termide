@@ -20,6 +20,13 @@ func (h *Handler) startTask(ctx context.Context, message protocol.Message) (prot
 	if _, err := h.store.GetWorkspace(ctx, message.WorkspaceID); err != nil {
 		return protocol.Message{}, err
 	}
+	task, err := h.store.GetTask(ctx, message.TaskID)
+	if err != nil {
+		return protocol.Message{}, err
+	}
+	if task.WorkspaceID != message.WorkspaceID {
+		return protocol.Message{}, fmt.Errorf("task does not belong to workspace")
+	}
 	var specs []agent.Spec
 	if err := json.Unmarshal(message.Payload, &specs); err != nil {
 		return protocol.Message{}, fmt.Errorf("invalid agent plan: %w", err)
@@ -27,13 +34,23 @@ func (h *Handler) startTask(ctx context.Context, message protocol.Message) (prot
 	if len(specs) == 0 {
 		return protocol.Message{}, fmt.Errorf("agent plan must not be empty")
 	}
-	if err := h.runtime.Start(ctx, message.TaskID, specs, h.runner); err != nil {
+	for i := range specs {
+		if specs[i].Command == "" {
+			specs[i].Command = task.Description
+		}
+	}
+	runner := h.runner
+	if h.isolate {
+		runner = agent.NewIsolatedRunner(h.store, message.TaskID, runner)
+	}
+	if err := h.runtime.Start(ctx, message.TaskID, specs, runner); err != nil {
 		return protocol.Message{}, err
 	}
 	event := domain.EventEnvelope{
 		WorkspaceID: message.WorkspaceID,
 		TaskID:      message.TaskID,
 		AgentID:     "system",
+		Sequence:    1,
 		Type:        domain.EventTaskUpdated,
 		Payload:     []byte("completed"),
 	}

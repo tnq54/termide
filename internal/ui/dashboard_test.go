@@ -73,6 +73,15 @@ func TestDashboardRestoresTaskHistoryAndRefreshesIncrementalLogs(t *testing.T) {
 	}
 }
 
+func TestDashboardSanitizesAgentIDInLogs(t *testing.T) {
+	m, s := dashboardFixture(t)
+	s.AppendEvent(context.Background(), domain.EventEnvelope{WorkspaceID: "w", TaskID: "task-a", AgentID: "bad\x1b[2J", Type: domain.EventOutput, Payload: []byte(`{"Output":"safe"}`)})
+	m = applyCommand(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if strings.Contains(m.View(), "\x1b") {
+		t.Fatal("agent ID control sequence leaked")
+	}
+}
+
 func TestDashboardSmallViewportAndUntrustedOutput(t *testing.T) {
 	m, s := dashboardFixture(t)
 	payload, _ := json.Marshal(map[string]string{"Output": "\x1b[2Jmalicious\rcontent"})

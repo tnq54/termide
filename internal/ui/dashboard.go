@@ -33,7 +33,11 @@ type dashboardResult struct {
 
 func (m Model) dashboardCommand(kind protocol.MessageType, taskID string, before int64, after uint64) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		timeout := 15 * time.Second
+		if kind == protocol.MessageStartTask {
+			timeout = 24 * time.Hour
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		var payload []byte
 		var err error
@@ -124,7 +128,7 @@ func snapshotLogLines(events []domain.EventEnvelope) []string {
 		text = safeLabel(text)
 		text = strings.TrimSpace(text)
 		if text != "" {
-			logs = append(logs, fmt.Sprintf("[%s] %s", event.AgentID, text))
+			logs = append(logs, fmt.Sprintf("[%s] %s", safeLabel(event.AgentID), text))
 		}
 	}
 	return logs
@@ -146,6 +150,10 @@ func (m Model) dashboardKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if string(key.Runes) == "s" && m.dashboard.snapshot.Task.Status == domain.TaskQueued {
 				m.dashboard.busy = true
 				m.Status = "starting task"
+				if m.remote == nil || !m.ready {
+					m.Status = "remote workspace is not connected"
+					return m, nil
+				}
 				return m, m.dashboardCommand(protocol.MessageStartTask, m.dashboard.snapshot.Task.ID, 0, 0)
 			}
 			if string(key.Runes) == "r" {

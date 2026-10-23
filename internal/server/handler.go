@@ -14,12 +14,17 @@ type Handler struct {
 	store   *store.Store
 	runtime *agent.TaskRuntime
 	runner  agent.Runner
+	isolate bool
 }
 
 func NewHandler(s *store.Store) *Handler { return &Handler{store: s, runtime: agent.NewTaskRuntime(s)} }
 
 func NewHandlerWithRunner(s *store.Store, runner agent.Runner) *Handler {
 	return &Handler{store: s, runtime: agent.NewTaskRuntime(s), runner: runner}
+}
+
+func NewIsolatedHandler(s *store.Store, runner agent.Runner) *Handler {
+	return &Handler{store: s, runtime: agent.NewTaskRuntime(s), runner: runner, isolate: true}
 }
 func (h *Handler) HandleWithAgents(ctx context.Context, message protocol.Message, specs []agent.Spec, runner agent.Runner) (protocol.Message, error) {
 	if message.Type != protocol.MessageStartTask {

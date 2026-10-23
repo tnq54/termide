@@ -10,6 +10,27 @@ import (
 	"testing"
 )
 
+func TestStartTaskRejectsTaskFromAnotherWorkspace(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(t.TempDir() + "/state.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	s.CreateWorkspace(ctx, domain.Workspace{ID: "w1"})
+	s.CreateWorkspace(ctx, domain.Workspace{ID: "w2"})
+	s.CreateTask(ctx, domain.Task{ID: "t", WorkspaceID: "w2", Status: domain.TaskQueued})
+	h := NewHandlerWithRunner(s, dashboardRunner{})
+	payload, _ := json.Marshal([]agent.Spec{{ID: "a", Role: "coder"}})
+	if _, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageStartTask, WorkspaceID: "w1", TaskID: "t", Payload: payload}); err == nil {
+		t.Fatal("accepted cross-workspace task")
+	}
+	task, _ := s.GetTask(ctx, "t")
+	if task.Status != domain.TaskQueued {
+		t.Fatalf("task mutated: %q", task.Status)
+	}
+}
+
 func TestDashboardCanStartQueuedTaskAndRefreshStatus(t *testing.T) {
 	ctx := context.Background()
 	s, err := store.Open(t.TempDir() + "/state.db")

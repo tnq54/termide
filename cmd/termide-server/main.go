@@ -23,7 +23,7 @@ func main() {
 	defer s.Close()
 	if *stdio {
 		runner := agent.NewOpenCodeRunner(*opencode, nil)
-		if err := server.NewHandlerWithRunner(s, runner).Serve(context.Background(), os.Stdin, os.Stdout); err != nil {
+		if err := server.NewIsolatedHandler(s, runner).Serve(context.Background(), os.Stdin, os.Stdout); err != nil {
 			log.Fatal(err)
 		}
 		return
