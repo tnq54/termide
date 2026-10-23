@@ -14,16 +14,18 @@ const (
 	PanelTerminal Panel = "terminal"
 	PanelDiff Panel = "diff"
 	PanelApprovals Panel = "approvals"
+	PanelTask Panel = "task"
 )
 
-type Model struct { Width, Height int; Panel Panel; Status string }
+type Model struct { Width, Height int; Panel Panel; Status string; TaskDescription string }
 func NewModel() Model { return Model{Panel: PanelDashboard, Status: "disconnected"} }
 func (m Model) Init() tea.Cmd { return nil }
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch value := msg.(type) {
 	case tea.WindowSizeMsg: m.Width, m.Height = value.Width, value.Height
 	case tea.KeyMsg:
-		switch value.String() {
+		key := value.String()
+		switch key {
 		case "q", "ctrl+c": return m, tea.Quit
 		case "d": m.Panel = PanelDashboard
 		case "e": m.Panel = PanelEditor
@@ -31,8 +33,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "t": m.Panel = PanelTerminal
 		case "f": m.Panel = PanelDiff
 		case "p": m.Panel = PanelApprovals
+		case "n": m.Panel = PanelTask; m.TaskDescription = ""
+		case "enter": if m.Panel == PanelTask && m.TaskDescription != "" { m.Panel = PanelAgents }
+		default:
+			if m.Panel == PanelTask && value.Type == tea.KeyRunes { m.TaskDescription += string(value.Runes) }
 		}
 	}
 	return m, nil
 }
-func (m Model) View() string { return fmt.Sprintf("TermIDE [%s]  panel: %s\n[e]ditor [a]gents [t]erminal [f]iff [p]ermissions [q]uit\n", m.Status, m.Panel) }
+func (m Model) View() string { return fmt.Sprintf("TermIDE [%s]  panel: %s\ntask: %s\n[n]ew task [e]ditor [a]gents [t]erminal [f]iff [p]ermissions [q]uit\n", m.Status, m.Panel, m.TaskDescription) }
