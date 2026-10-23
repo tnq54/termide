@@ -41,4 +41,5 @@ func TestTaskRuntimeRunsAndPersistsCompletion(t *testing.T) {
 	if got.Status != domain.TaskCompleted { t.Fatalf("status = %q", got.Status) }
 	agents, err := s.ListAgents(ctx, task.ID); if err != nil { t.Fatal(err) }
 	if len(agents) != 1 || agents[0].Status != domain.AgentCompleted { t.Fatalf("agents = %#v", agents) }
+	if agents[0].Role != "coder" { t.Fatalf("agent role was lost: %#v", agents[0]) }
 }
