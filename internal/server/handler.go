@@ -4,13 +4,20 @@ import (
 	"context"
 	"fmt"
 
+	"termide/internal/agent"
 	"termide/internal/domain"
 	"termide/internal/protocol"
 	"termide/internal/store"
 )
 
-type Handler struct { store *store.Store }
-func NewHandler(s *store.Store) *Handler { return &Handler{store: s} }
+type Handler struct { store *store.Store; runtime *agent.TaskRuntime }
+func NewHandler(s *store.Store) *Handler { return &Handler{store: s, runtime: agent.NewTaskRuntime(s)} }
+func (h *Handler) HandleWithAgents(ctx context.Context, message protocol.Message, specs []agent.Spec, runner agent.Runner) (protocol.Message, error) {
+	if message.Type != protocol.MessageStartTask { return protocol.Message{}, fmt.Errorf("unsupported task action %q", message.Type) }
+	if err := h.runtime.Start(ctx, message.TaskID, specs, runner); err != nil { return protocol.Message{}, err }
+	event := domain.EventEnvelope{WorkspaceID: message.WorkspaceID, TaskID: message.TaskID, AgentID: "system", Sequence: 1, Type: domain.EventTaskUpdated, Payload: []byte("completed")}
+	return protocol.Message{Type: protocol.MessageEvent, Event: &event}, nil
+}
 func (h *Handler) Handle(ctx context.Context, message protocol.Message) (protocol.Message, error) {
 	switch message.Type {
 	case protocol.MessageCreateTask:

@@ -11,6 +11,7 @@ const (
 	MessageHello       MessageType = "hello"
 	MessageSubscribe   MessageType = "subscribe"
 	MessageCreateTask  MessageType = "create_task"
+	MessageStartTask   MessageType = "start_task"
 	MessageApprove     MessageType = "approve"
 	MessageCancel      MessageType = "cancel"
 	MessageRunCommand  MessageType = "run_command"
