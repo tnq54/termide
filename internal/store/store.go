@@ -38,6 +38,11 @@ func (s *Store) CreateTask(ctx context.Context, t domain.Task) error {
 	return err
 }
 
+func (s *Store) UpdateTaskStatus(ctx context.Context, id string, status domain.TaskStatus) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE tasks SET status=? WHERE id=?`, status, id)
+	return err
+}
+
 func (s *Store) GetTask(ctx context.Context, id string) (domain.Task, error) {
 	var t domain.Task
 	err := s.db.QueryRowContext(ctx, `SELECT id,workspace_id,description,status FROM tasks WHERE id=?`, id).Scan(&t.ID, &t.WorkspaceID, &t.Description, &t.Status)
