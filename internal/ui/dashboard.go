@@ -28,6 +28,7 @@ type dashboardResult struct {
 	page     domain.TaskPage
 	snapshot domain.TaskSnapshot
 	err      error
+	started  bool
 }
 
 func (m Model) dashboardCommand(kind protocol.MessageType, taskID string, before int64, after uint64) tea.Cmd {
@@ -39,6 +40,8 @@ func (m Model) dashboardCommand(kind protocol.MessageType, taskID string, before
 		switch kind {
 		case protocol.MessageListTasks:
 			payload, err = json.Marshal(protocol.TaskPageRequest{Before: before})
+		case protocol.MessageStartTask:
+			payload, err = json.Marshal([]map[string]string{{"id": "agent-1", "role": "coder", "command": "implement task"}})
 		}
 		if err != nil {
 			return dashboardResult{kind: kind, err: err}
@@ -56,6 +59,12 @@ func (m Model) dashboardCommand(kind protocol.MessageType, taskID string, before
 				result.err = fmt.Errorf("unexpected task page response")
 			} else {
 				result.err = json.Unmarshal(response.Payload, &result.page)
+			}
+		} else if kind == protocol.MessageStartTask {
+			if response.Type != protocol.MessageEvent || response.TaskID != taskID {
+				result.err = fmt.Errorf("unexpected task start response")
+			} else {
+				result.started = true
 			}
 		} else {
 			if response.Type != protocol.MessageTaskDetail || response.TaskID != taskID {
@@ -76,6 +85,11 @@ func (m Model) receiveDashboard(result dashboardResult) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch result.kind {
+	case protocol.MessageStartTask:
+		m.Status = "task started"
+		if m.dashboard.snapshot != nil {
+			m.dashboard.snapshot.Task.Status = domain.TaskRunning
+		}
 	case protocol.MessageListTasks:
 		if m.dashboard.before == 0 {
 			m.dashboard.tasks = append([]domain.Task(nil), result.page.Tasks...)
@@ -129,6 +143,11 @@ func (m Model) dashboardKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Status = "task history loaded"
 			return m, nil
 		case tea.KeyRunes:
+			if string(key.Runes) == "s" && m.dashboard.snapshot.Task.Status == domain.TaskQueued {
+				m.dashboard.busy = true
+				m.Status = "starting task"
+				return m, m.dashboardCommand(protocol.MessageStartTask, m.dashboard.snapshot.Task.ID, 0, 0)
+			}
 			if string(key.Runes) == "r" {
 				m.dashboard.busy = true
 				m.Status = "refreshing task detail"
@@ -204,7 +223,7 @@ func (m Model) dashboardView() string {
 		}
 		lines = append(lines, "Logs:")
 		lines = append(lines, m.dashboard.logs...)
-		lines = append(lines, "r refresh | Esc back")
+		lines = append(lines, "s start queued | r refresh | Esc back")
 	} else {
 		if len(m.dashboard.tasks) == 0 {
 			lines = append(lines, "(no tasks)")

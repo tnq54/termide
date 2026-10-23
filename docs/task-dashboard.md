@@ -24,5 +24,11 @@ status của agents và output event.
   không thể được mở qua dashboard.
 - Mỗi snapshot trả tối đa 50 event và 2 MiB payload.
 - Output được loại bỏ control characters trước khi render trong TUI.
-- Dashboard hiện là read-only: chưa start/cancel task, chưa có live push hoặc
-  automatic reconnect. `r` là thao tác refresh rõ ràng.
+- Dashboard hỗ trợ `s` trong task detail để start task đang ở trạng thái `queued`.
+Server nhận agent plan mặc định gồm một agent `coder`, chạy bằng OpenCode runner
+được cấu hình qua `termide-server --opencode`. Việc chạy vẫn là synchronous trong
+request hiện tại; supervisor detached và reconnect-safe child process vẫn là
+phần tiếp theo.
+
+Chưa có cancel task, live push hoặc automatic reconnect. `r` là thao tác refresh
+rõ ràng.

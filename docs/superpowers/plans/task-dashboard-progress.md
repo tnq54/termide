@@ -26,9 +26,11 @@ Implementation notes:
 - The TUI restores task history after workspace open, opens task detail with
   Enter, refreshes logs incrementally with `r`, and sanitizes output before
   rendering so terminal control sequences cannot escape into the terminal.
-- This is read-only dashboard functionality. Starting queued tasks from this
-  view, live subscriptions, automatic reconnect and agent controls remain
-  future work.
+- Dashboard detail now supports `s` for queued tasks. The server accepts a
+  JSON agent plan on `start_task`; the production stdio binary wires
+  `OpenCodeRunner` using `--opencode`. The request remains synchronous until a
+  detached supervisor is added. Cancel, live subscriptions and automatic
+  reconnect remain future work.
 
 Verification completed:
 

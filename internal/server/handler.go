@@ -13,9 +13,14 @@ import (
 type Handler struct {
 	store   *store.Store
 	runtime *agent.TaskRuntime
+	runner  agent.Runner
 }
 
 func NewHandler(s *store.Store) *Handler { return &Handler{store: s, runtime: agent.NewTaskRuntime(s)} }
+
+func NewHandlerWithRunner(s *store.Store, runner agent.Runner) *Handler {
+	return &Handler{store: s, runtime: agent.NewTaskRuntime(s), runner: runner}
+}
 func (h *Handler) HandleWithAgents(ctx context.Context, message protocol.Message, specs []agent.Spec, runner agent.Runner) (protocol.Message, error) {
 	if message.Type != protocol.MessageStartTask {
 		return protocol.Message{}, fmt.Errorf("unsupported task action %q", message.Type)
@@ -28,12 +33,14 @@ func (h *Handler) HandleWithAgents(ctx context.Context, message protocol.Message
 }
 func (h *Handler) Handle(ctx context.Context, message protocol.Message) (protocol.Message, error) {
 	switch message.Type {
-	case protocol.MessageListTasks,protocol.MessageTaskSnapshot:
-		return h.handleDashboard(ctx,message)
+	case protocol.MessageListTasks, protocol.MessageTaskSnapshot:
+		return h.handleDashboard(ctx, message)
 	case protocol.MessageListFiles, protocol.MessageReadFile, protocol.MessageSaveFile:
 		return h.handleFiles(ctx, message)
 	case protocol.MessageOpenWorkspace:
 		return h.openWorkspace(ctx, message)
+	case protocol.MessageStartTask:
+		return h.startTask(ctx, message)
 	case protocol.MessageCreateTask:
 		if message.WorkspaceID == "" || message.TaskID == "" {
 			return protocol.Message{}, fmt.Errorf("workspace and task IDs are required")

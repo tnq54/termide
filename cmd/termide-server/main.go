@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"termide/internal/agent"
 	"termide/internal/server"
 	"termide/internal/store"
 )
@@ -13,6 +14,7 @@ import (
 func main() {
 	database := flag.String("database", "termide.db", "SQLite database path")
 	stdio := flag.Bool("stdio", false, "serve framed control requests on stdin/stdout")
+	opencode := flag.String("opencode", "opencode", "OpenCode executable used for start_task")
 	flag.Parse()
 	s, err := store.Open(*database)
 	if err != nil {
@@ -20,7 +22,8 @@ func main() {
 	}
 	defer s.Close()
 	if *stdio {
-		if err := server.NewHandler(s).Serve(context.Background(), os.Stdin, os.Stdout); err != nil {
+		runner := agent.NewOpenCodeRunner(*opencode, nil)
+		if err := server.NewHandlerWithRunner(s, runner).Serve(context.Background(), os.Stdin, os.Stdout); err != nil {
 			log.Fatal(err)
 		}
 		return
