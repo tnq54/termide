@@ -1,0 +1,12 @@
+name: APK status
+
+on:
+  workflow_dispatch:
+
+jobs:
+  explain:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "TermIDE currently builds a Termux CLI, not an Android APK."
+          echo "Use the Termux binary release. An APK requires a native Android UI/terminal module first."
