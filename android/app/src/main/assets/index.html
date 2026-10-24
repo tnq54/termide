@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>TermIDE</title>
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <link rel="stylesheet" href="app.css">
+  <script defer src="vendor/xterm.js"></script>
+  <script defer src="vendor/addon-fit.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header><strong>TermIDE</strong><span id="badge">Bản thử độc lập</span><button id="settings" aria-label="Thông tin kết nối">Kết nối</button></header>
+  <main id="connection">
+    <h1>Workspace trên VPS.<br>Terminal trong túi.</h1>
+    <p class="intro">Kết nối SSH trực tiếp từ điện thoại. Không cần Termux.</p>
+    <form id="profile" autocomplete="off">
+      <div class="address"><label>Host / IP<input id="host" placeholder="192.0.2.10" autocapitalize="none" spellcheck="false" required></label><label>Port<input id="port" inputmode="numeric" value="22" required></label></div>
+      <label>Tài khoản SSH<input id="user" placeholder="ubuntu" autocapitalize="none" spellcheck="false" required></label>
+      <label>Mật khẩu<input id="password" type="password" placeholder="Để trống nếu dùng SSH key" autocomplete="off"></label>
+      <div class="key-row"><button id="import-key" type="button">Chọn SSH key</button><span id="key-label">Chưa chọn key</span><button id="clear-key" type="button" hidden>Xóa</button></div>
+      <label id="phrase-label" hidden>Passphrase của key<input id="passphrase" type="password" autocomplete="off"></label>
+      <label>Thư mục project trên VPS<input id="project" placeholder="/home/ubuntu/project" autocapitalize="none" spellcheck="false"></label>
+      <button class="primary" type="submit">Mở TermIDE</button>
+      <button id="shell" type="button">Mở SSH shell</button>
+    </form>
+    <p class="hint">TermIDE cần <code>termide</code> và supervisor trên VPS. Dùng SSH shell để kiểm tra đăng nhập trước.</p>
+    <button id="demo" class="demo">Thử terminal không cần VPS</button>
+    <p class="privacy">Chỉ lưu host, user và đường dẫn. Mật khẩu và SSH key không ghi xuống bộ nhớ máy.</p>
+  </main>
+  <section id="session" hidden>
+    <div id="terminal" aria-label="Terminal SSH"></div>
+    <nav id="keys" aria-label="Phím terminal">
+      <button data-key="esc">Esc</button><button data-key="tab">Tab</button><button id="ctrl" aria-pressed="false">Ctrl</button><button data-key="up" aria-label="Lên">↑</button><button data-key="down" aria-label="Xuống">↓</button><button data-key="left" aria-label="Trái">←</button><button data-key="right" aria-label="Phải">→</button>
+      <button data-key="save">^S</button><button data-key="quit">^C</button><button data-key="enter">Enter</button>
+    </nav>
+    <div class="session-actions"><button id="keyboard">Bàn phím</button><button id="smaller" aria-label="Giảm cỡ chữ">A−</button><button id="larger" aria-label="Tăng cỡ chữ">A+</button><button id="disconnect">Ngắt</button></div>
+  </section>
+  <footer id="status" role="status">Sẵn sàng. Có thể thử demo ngay.</footer>
+</body>
+</html>

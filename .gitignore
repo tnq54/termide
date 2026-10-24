@@ -8,3 +8,6 @@ android/.gradle/
 android/local.properties
 *.apk
 *.aab
+android/terminal/node_modules/
+android/terminal/test-results/
+android/terminal/playwright-report/

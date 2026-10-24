@@ -66,3 +66,13 @@ func DialSSHStream(ctx context.Context, host string) (io.ReadWriteCloser, error)
 	}
 	return StartProcess(cmd)
 }
+
+// LocalCommand runs the framed bridge on the same machine as the TUI.
+// It inherits the working directory used by the durable supervisor.
+func LocalCommand(ctx context.Context) *exec.Cmd {
+	return exec.CommandContext(ctx, "termide-server", "--stdio")
+}
+
+func DialLocalStream(ctx context.Context) (io.ReadWriteCloser, error) {
+	return StartProcess(LocalCommand(ctx))
+}

@@ -2,9 +2,6 @@ plugins {
     id 'com.android.application'
 }
 
-def termuxHost = project.findProperty('termideHost') ?: 'vps'
-def termuxProject = project.findProperty('termideProject') ?: '/home/ubuntu/termux'
-
 android {
     namespace 'dev.termide.launcher'
     compileSdk 34
@@ -13,10 +10,8 @@ android {
         applicationId 'dev.termide.launcher'
         minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName '1.0'
-        buildConfigField 'String', 'TERMIDE_HOST', "\"${termuxHost}\""
-        buildConfigField 'String', 'TERMIDE_PROJECT', "\"${termuxProject}\""
+        versionCode 2
+        versionName '0.2-standalone-test'
     }
 
     buildFeatures {
@@ -36,4 +31,27 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    packaging {
+        resources.excludes += 'META-INF/versions/**/OSGI-INF/MANIFEST.MF'
+    }
+}
+
+// Terminal JS is vendored (no runtime CDN). Regenerate with
+// `sh sync-terminal-assets.sh` (needs npm); committed on purpose.
+tasks.register('checkTerminalAssets') {
+    doLast {
+        def xterm = file('src/main/assets/vendor/xterm.js')
+        if (!xterm.exists()) {
+            throw new GradleException("Missing src/main/assets/vendor/xterm.js. Run: sh android/sync-terminal-assets.sh")
+        }
+    }
+}
+afterEvaluate {
+    tasks.getByName('preBuild').dependsOn('checkTerminalAssets')
+}
+dependencies {
+    implementation 'com.github.mwiede:jsch:0.2.24'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
+    testImplementation 'junit:junit:4.13.2'
 }

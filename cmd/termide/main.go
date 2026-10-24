@@ -19,10 +19,11 @@ func main() {
 	width := flag.Int("width", 80, "terminal width")
 	height := flag.Int("height", 24, "terminal height")
 	host := flag.String("ssh", "", "SSH host alias configured in ~/.ssh/config")
+	local := flag.Bool("local", false, "connect to the supervisor on this machine (no SSH)")
 	project := flag.String("project", "", "absolute project directory on the VPS")
 	flag.Parse()
-	if (*host == "") != (*project == "") || (*project != "" && !strings.HasPrefix(*project, "/")) {
-		fmt.Fprintln(os.Stderr, "--ssh and --project must be supplied together; project must be absolute")
+	if (*local && *host != "") || ((*local || *host != "") != (*project != "")) || (*project != "" && !strings.HasPrefix(*project, "/")) {
+		fmt.Fprintln(os.Stderr, "supply either --local or --ssh with --project; project must be absolute")
 		os.Exit(2)
 	}
 	if *width != 80 || *height != 24 {
@@ -31,19 +32,26 @@ func main() {
 		return
 	}
 	model := ui.NewModel()
-	if *host != "" {
+	if *host != "" || *local {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		remote, err := client.DialSSH(ctx, *host)
+		dial := func(ctx context.Context) (io.ReadWriteCloser, error) {
+			return client.DialSSHStream(ctx, *host)
+		}
+		identity := *host
+		if *local {
+			dial = client.DialLocalStream
+			identity = "local"
+		}
+		stream, err := dial(ctx)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+		remote := client.NewRemote(stream)
 		defer remote.Close()
-		id := fmt.Sprintf("%x", sha256.Sum256([]byte(*host+"\x00"+*project)))
-		model = ui.NewRemoteModel(remote, domain.Workspace{ID: id, Host: *host, Root: *project, Name: *project}).WithStreamDialer(func(ctx context.Context) (io.ReadWriteCloser, error) {
-			return client.DialSSHStream(ctx, *host)
-		})
+		id := fmt.Sprintf("%x", sha256.Sum256([]byte(identity+"\x00"+*project)))
+		model = ui.NewRemoteModel(remote, domain.Workspace{ID: id, Host: identity, Root: *project, Name: *project}).WithStreamDialer(dial)
 	}
 	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
