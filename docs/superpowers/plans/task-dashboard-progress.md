@@ -63,6 +63,18 @@ the process-tree limitation documented above still applies.
   failures reported inline.
 - [x] Full suite, race, vet and cross-builds passed.
 
+## LSP completion
+
+- [x] RED→GREEN: client `Complete` parse cả hai dạng response (object/array),
+  fallback insertText → textEdit → label.
+- [x] RED→GREEN: protocol + server `Complete` end-to-end qua fake server,
+  từ chối non-Python.
+- [x] RED→GREEN: TUI popup `Ctrl+J`, Up/Down điều hướng, Enter chèn thay từ
+  hiện tại (có undo), Esc đóng popup giữ nguyên tab; response lạ và kết quả
+  rỗng đều xử lý rõ ràng.
+- [x] Bắt bug value-receiver (`acceptCompletion`/`closeCompletion` mất mutation).
+- [x] Full suite, race (ui/editor/server/lsp), vet, cross-builds passed.
+
 ## LSP hover + diagnostics
 
 - [x] RED→GREEN: daemon-scoped LSP manager (một server mỗi workspace root,

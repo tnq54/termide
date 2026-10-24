@@ -43,6 +43,8 @@ type Model struct {
 	termPtyOpen     bool
 	hover           string
 	diags           []string
+	completeItems   []protocol.LspCompleteItem
+	completeSel     int
 }
 
 func NewModel() Model {
@@ -63,6 +65,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.receiveStreamEvent(value)
 	case hoverResult:
 		return m.receiveHover(value)
+	case completeResult:
+		return m.receiveComplete(value)
 	case diagnosticsResult:
 		return m.receiveDiagnostics(value)
 	case termOpenedResult:

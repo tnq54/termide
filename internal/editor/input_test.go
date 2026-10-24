@@ -28,6 +28,27 @@ func TestInputPreservesTabsCRLFAndUnicode(t *testing.T) {
 	}
 }
 
+func TestReplaceWordBeforeCursor(t *testing.T) {
+	m := NewInput()
+	m.SetValue("x = foo")
+	m.ReplaceWordBeforeCursor("foobar")
+	if m.Value() != "x = foobar" {
+		t.Fatalf("value = %q", m.Value())
+	}
+	m.ReplaceWordBeforeCursor("")
+	if m.Value() != "x = " {
+		t.Fatalf("value = %q", m.Value())
+	}
+	m.SetValue("x = 1 + bar2")
+	// Move cursor left twice: inside "bar2".
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m.ReplaceWordBeforeCursor("baz(")
+	if m.Value() != "x = 1 + baz(r2" {
+		t.Fatalf("value = %q", m.Value())
+	}
+}
+
 func TestInputNavigationAndDelete(t *testing.T) {
 	m := NewInput()
 	m.SetValue("ab\ncd")

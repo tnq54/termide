@@ -221,6 +221,24 @@ func (m Model) receiveFile(result fileResult) (tea.Model, tea.Cmd) {
 
 func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.files.document != nil {
+		if m.completing() {
+			switch key.Type {
+			case tea.KeyUp:
+				m.completeSel = (m.completeSel + len(m.completeItems) - 1) % len(m.completeItems)
+				return m, nil
+			case tea.KeyDown:
+				m.completeSel = (m.completeSel + 1) % len(m.completeItems)
+				return m, nil
+			case tea.KeyEnter:
+				m.acceptCompletion()
+				return m, nil
+			case tea.KeyEsc:
+				m.closeCompletion()
+				return m, nil
+			default:
+				m.closeCompletion()
+			}
+		}
 		switch key.Type {
 		case tea.KeyEsc:
 			if m.hover != "" {
@@ -243,6 +261,12 @@ func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			line, col := m.files.input.CursorLineCol()
 			return m, m.hoverCommand(m.files.document.Path, line, col)
+		case tea.KeyCtrlJ:
+			if m.remote == nil || !m.ready || m.files.busy {
+				return m, nil
+			}
+			line, col := m.files.input.CursorLineCol()
+			return m, m.completeCommand(m.files.document.Path, line, col)
 		case tea.KeyCtrlG:
 			if m.files.busy {
 				return m, nil
@@ -373,6 +397,7 @@ func (m Model) editorView() string {
 		lines = append(lines, safeLabel(m.files.document.Path)+marker)
 		lines = append(lines, strings.Split(m.files.input.View(), "\n")...)
 		lines = renderHover(lines, m.hover, width)
+		lines = m.renderCompletion(lines, width)
 		lines = renderProblems(lines, m.diags, width)
 		lines = append(lines, "Ctrl+S save | Esc files | Ctrl+N/P tabs | Ctrl+K hover", "Ctrl+Z/Y undo/redo | Ctrl+G discard")
 	} else {

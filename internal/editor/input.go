@@ -52,6 +52,22 @@ func (m Input) lineEnd(start int) int {
 	}
 	return len(m.text)
 }
+func isWordRune(r rune) bool {
+	return r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r > 127
+}
+
+// ReplaceWordBeforeCursor deletes the word characters immediately before the
+// cursor and inserts text in their place, leaving the cursor after it.
+func (m *Input) ReplaceWordBeforeCursor(text string) {
+	start := m.cursor
+	for start > 0 && isWordRune(m.text[start-1]) {
+		start--
+	}
+	m.text = append(append([]rune{}, m.text[:start]...), append([]rune(text), m.text[m.cursor:]...)...)
+	m.cursor = start + len([]rune(text))
+	m.ensureVisible()
+}
+
 func (m *Input) insert(text string) {
 	if !utf8.ValidString(text) {
 		return

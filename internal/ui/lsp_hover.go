@@ -138,6 +138,109 @@ func renderProblems(lines []string, diags []string, width int) []string {
 	return append(out, lines[1:]...)
 }
 
+type completeResult struct {
+	items []protocol.LspCompleteItem
+	err   error
+}
+
+func (m Model) completeCommand(path string, line, character int) tea.Cmd {
+	payload, err := json.Marshal(protocol.LspCompleteRequest{Path: path, Line: line, Character: character})
+	if err != nil {
+		return func() tea.Msg { return completeResult{err: err} }
+	}
+	return func() tea.Msg {
+		timeout := 15 * time.Second
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		response, err := m.remote.Call(ctx, protocol.Message{Type: protocol.MessageLspComplete, WorkspaceID: m.workspace.ID, Payload: payload})
+		if err != nil {
+			return completeResult{err: err}
+		}
+		if response.Type != protocol.MessageLspCompleteResult || response.WorkspaceID != m.workspace.ID {
+			return completeResult{err: fmt.Errorf("unexpected complete response")}
+		}
+		var result protocol.LspCompleteResult
+		if err := json.Unmarshal(response.Payload, &result); err != nil {
+			return completeResult{err: err}
+		}
+		return completeResult{items: result.Items}
+	}
+}
+
+func (m Model) receiveComplete(result completeResult) (tea.Model, tea.Cmd) {
+	if result.err != nil {
+		m.Status = result.err.Error()
+		return m, nil
+	}
+	if len(result.items) == 0 {
+		m.Status = "no completions"
+		return m, nil
+	}
+	if len(result.items) > 20 {
+		result.items = result.items[:20]
+	}
+	m.completeItems = result.items
+	m.completeSel = 0
+	m.Status = "completion: Up/Down navigate, Enter accepts"
+	return m, nil
+}
+
+func (m Model) completing() bool { return len(m.completeItems) > 0 }
+
+func (m *Model) closeCompletion() {
+	m.completeItems = nil
+	m.completeSel = 0
+}
+
+func (m *Model) acceptCompletion() {
+	if !m.completing() || m.files.document == nil {
+		return
+	}
+	item := m.completeItems[m.completeSel]
+	if item.Insert == "" {
+		item.Insert = item.Label
+	}
+	before := m.files.input.Value()
+	m.files.input.ReplaceWordBeforeCursor(item.Insert)
+	if m.files.input.Value() != before {
+		m.hover = ""
+		m.files.undo = append(m.files.undo, before)
+		m.files.redo = nil
+		if len(m.files.undo) > 50 {
+			m.files.undo = m.files.undo[1:]
+		}
+	}
+	m.closeCompletion()
+}
+
+func (m Model) renderCompletion(lines []string, width int) []string {
+	if !m.completing() || len(lines) == 0 {
+		return lines
+	}
+	out := make([]string, 0, len(lines)+len(m.completeItems)+2)
+	out = append(out, lines[0])
+	out = append(out, "--- complete (Esc) ---")
+	shown := m.completeItems
+	if len(shown) > 10 {
+		shown = shown[:10]
+	}
+	for i, item := range shown {
+		marker := "  "
+		if i == m.completeSel {
+			marker = "> "
+		}
+		text := strings.TrimSpace(safeLabel(item.Label))
+		if detail := strings.TrimSpace(safeLabel(item.Detail)); detail != "" {
+			text += " -- " + detail
+		}
+		if width > 2 && len(text) > width-2 {
+			text = text[:width-2]
+		}
+		out = append(out, marker+text)
+	}
+	return append(out, lines[1:]...)
+}
+
 // renderHover appends a popup box after the first body line.
 func renderHover(lines []string, text string, width int) []string {
 	if strings.TrimSpace(text) == "" || len(lines) == 0 {
