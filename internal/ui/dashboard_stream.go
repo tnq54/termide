@@ -16,13 +16,14 @@ type StreamDialer func(context.Context) (io.ReadWriteCloser, error)
 
 type streamOpenedResult struct {
 	taskID string
+	gen    uint64
 	stream *client.Stream
-	cancel context.CancelFunc
 	catch  []domain.EventEnvelope
 	err    error
 }
 
 type streamEventResult struct {
+	gen   uint64
 	event domain.EventEnvelope
 	err   error
 }
@@ -35,47 +36,57 @@ func (m Model) WithStreamDialer(dial StreamDialer) Model {
 
 func (m *Model) closeStream() {
 	m.dashboard.streaming = false
-	if m.dashboard.streamCancel != nil {
-		m.dashboard.streamCancel()
-		m.dashboard.streamCancel = nil
-	}
 	if m.dashboard.stream != nil {
 		m.dashboard.stream.Close()
 		m.dashboard.stream = nil
 	}
 }
 
+// streamOpenTimeout bounds one dial+catch-up. A hung dial must not pin the
+// open forever; the wait-loop fallback covers the gap. Tests override it.
+var streamOpenTimeout = 15 * time.Second
+
 // openStreamCommand dials a push connection for the current snapshot cursor.
+// The open carries the stream generation so stale completions are discarded.
 // On any failure the caller falls back to the wait loop.
 func (m Model) openStreamCommand(taskID string, after uint64) tea.Cmd {
 	dial := m.dialStream
 	workspaceID := m.workspace.ID
+	gen := m.dashboard.streamGen
 	return func() tea.Msg {
 		if dial == nil {
-			return streamOpenedResult{taskID: taskID, err: context.Canceled}
+			return streamOpenedResult{taskID: taskID, gen: gen, err: context.Canceled}
 		}
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), streamOpenTimeout)
+		// No defer cancel: ownership transfers to the opened stream; error
+		// paths cancel explicitly below.
 		conn, err := dial(ctx)
 		if err != nil {
 			cancel()
-			return streamOpenedResult{taskID: taskID, err: err}
+			return streamOpenedResult{taskID: taskID, gen: gen, err: err}
 		}
 		stream, catchUp, err := client.OpenStream(ctx, conn, workspaceID, after)
 		if err != nil {
 			cancel()
-			return streamOpenedResult{taskID: taskID, err: err}
+			return streamOpenedResult{taskID: taskID, gen: gen, err: err}
 		}
-		return streamOpenedResult{taskID: taskID, stream: stream, cancel: cancel, catch: catchUp}
+		stream.Detach()
+		cancel()
+		return streamOpenedResult{taskID: taskID, gen: gen, stream: stream, catch: catchUp}
 	}
 }
 
 func (m Model) receiveStreamOpened(result streamOpenedResult) (tea.Model, tea.Cmd) {
-	if result.err != nil || m.dashboard.snapshot == nil || m.dashboard.snapshot.Task.ID != result.taskID {
+	if result.gen != m.dashboard.streamGen {
+		// Superseded by a newer stream: drop without touching live state.
 		if result.stream != nil {
 			result.stream.Close()
 		}
-		if result.cancel != nil {
-			result.cancel()
+		return m, nil
+	}
+	if result.err != nil || m.dashboard.snapshot == nil || m.dashboard.snapshot.Task.ID != result.taskID {
+		if result.stream != nil {
+			result.stream.Close()
 		}
 		// Fall back to the wait loop instead of error-spinning.
 		if m.dashboard.snapshot != nil && !terminalTask(m.dashboard.snapshot.Task.Status) {
@@ -91,7 +102,6 @@ func (m Model) receiveStreamOpened(result streamOpenedResult) (tea.Model, tea.Cm
 	}
 	m.closeStream()
 	m.dashboard.stream = result.stream
-	m.dashboard.streamCancel = result.cancel
 	m.dashboard.streaming = true
 	previous := m.dashboard.snapshot.NextSequence
 	for _, event := range result.catch {
@@ -115,15 +125,20 @@ func (m Model) receiveStreamOpened(result streamOpenedResult) (tea.Model, tea.Cm
 
 func (m Model) streamNextCommand() tea.Cmd {
 	stream := m.dashboard.stream
+	gen := m.dashboard.streamGen
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), dashboardWaitBudget+5*time.Second)
 		defer cancel()
 		event, err := stream.Next(ctx)
-		return streamEventResult{event: event, err: err}
+		return streamEventResult{gen: gen, event: event, err: err}
 	}
 }
 
 func (m Model) receiveStreamEvent(result streamEventResult) (tea.Model, tea.Cmd) {
+	if result.gen != m.dashboard.streamGen {
+		// Stale read from a superseded stream: ignore, keep the live one.
+		return m, nil
+	}
 	if result.err != nil {
 		m.closeStream()
 		if m.dashboard.snapshot != nil && !terminalTask(m.dashboard.snapshot.Task.Status) {

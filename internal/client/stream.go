@@ -90,38 +90,52 @@ func OpenStream(ctx context.Context, conn io.ReadWriteCloser, workspaceID string
 	return stream, events, nil
 }
 
-// Next blocks for the next pushed event frame.
+// Next blocks for the next pushed event frame. Redelivered or reordered
+// pushes are skipped so one duplicate never kills the stream.
 func (s *Stream) Next(ctx context.Context) (domain.EventEnvelope, error) {
 	stop := context.AfterFunc(ctx, func() { s.conn.Close() })
 	defer stop()
-	message, err := protocol.Read(s.conn)
-	if err != nil {
-		if ctx.Err() != nil {
-			return domain.EventEnvelope{}, ctx.Err()
+	for {
+		message, err := protocol.Read(s.conn)
+		if err != nil {
+			if ctx.Err() != nil {
+				return domain.EventEnvelope{}, ctx.Err()
+			}
+			return domain.EventEnvelope{}, err
 		}
-		return domain.EventEnvelope{}, err
+		if message.Type == protocol.MessageError {
+			return domain.EventEnvelope{}, fmt.Errorf("remote: %s", message.Payload)
+		}
+		if message.Type != protocol.MessageEvent || message.Event == nil {
+			return domain.EventEnvelope{}, fmt.Errorf("unexpected stream message %q", message.Type)
+		}
+		event := *message.Event
+		if err := event.Validate(); err != nil {
+			return domain.EventEnvelope{}, err
+		}
+		if event.WorkspaceID != s.workspace {
+			return domain.EventEnvelope{}, fmt.Errorf("invalid pushed event workspace")
+		}
+		if event.Sequence <= s.previous {
+			continue
+		}
+		s.previous = event.Sequence
+		return event, nil
 	}
-	if message.Type == protocol.MessageError {
-		return domain.EventEnvelope{}, fmt.Errorf("remote: %s", message.Payload)
+}
+
+// Detach disarms the context guard installed by OpenStream, transferring
+// connection lifetime to Close. Use it when the stream outlives the open
+// call, e.g. a UI-owned live feed with its own shutdown path.
+func (s *Stream) Detach() {
+	if s.stop != nil {
+		s.stop()
+		s.stop = nil
 	}
-	if message.Type != protocol.MessageEvent || message.Event == nil {
-		return domain.EventEnvelope{}, fmt.Errorf("unexpected stream message %q", message.Type)
-	}
-	event := *message.Event
-	if err := event.Validate(); err != nil {
-		return domain.EventEnvelope{}, err
-	}
-	if event.WorkspaceID != s.workspace || event.Sequence <= s.previous {
-		return domain.EventEnvelope{}, fmt.Errorf("invalid pushed event sequence or workspace")
-	}
-	s.previous = event.Sequence
-	return event, nil
 }
 
 // Close ends the stream and releases the connection.
 func (s *Stream) Close() error {
-	if s.stop != nil {
-		s.stop()
-	}
+	s.Detach()
 	return s.conn.Close()
 }

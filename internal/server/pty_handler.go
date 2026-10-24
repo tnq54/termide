@@ -43,7 +43,7 @@ func (h *Handler) ptyOpen(ctx context.Context, message protocol.Message) (protoc
 	if err := ptyPayload(message, &request); err != nil {
 		return protocol.Message{}, err
 	}
-	id, err := h.pty.Open(ctx, root, request.Rows, request.Cols)
+	id, err := h.pty.Open(ctx, message.WorkspaceID, root, request.Rows, request.Cols)
 	if err != nil {
 		return protocol.Message{}, err
 	}
@@ -61,7 +61,7 @@ func (h *Handler) ptyWrite(ctx context.Context, message protocol.Message) (proto
 	if request.ID == "" {
 		return protocol.Message{}, fmt.Errorf("pty session ID is required")
 	}
-	if err := h.pty.Write(ctx, request.ID, request.Data); err != nil {
+	if err := h.pty.Write(ctx, message.WorkspaceID, request.ID, request.Data); err != nil {
 		return protocol.Message{}, err
 	}
 	return ptyResponse(message.WorkspaceID, protocol.MessagePtyOk, struct{}{})
@@ -78,7 +78,7 @@ func (h *Handler) ptyRead(ctx context.Context, message protocol.Message) (protoc
 	if request.ID == "" {
 		return protocol.Message{}, fmt.Errorf("pty session ID is required")
 	}
-	data, next, err := h.pty.Read(ctx, request.ID, request.After)
+	data, next, err := h.pty.Read(ctx, message.WorkspaceID, request.ID, request.After)
 	if err != nil {
 		return protocol.Message{}, err
 	}
@@ -96,7 +96,7 @@ func (h *Handler) ptyResize(ctx context.Context, message protocol.Message) (prot
 	if request.ID == "" {
 		return protocol.Message{}, fmt.Errorf("pty session ID is required")
 	}
-	if err := h.pty.Resize(ctx, request.ID, request.Rows, request.Cols); err != nil {
+	if err := h.pty.Resize(ctx, message.WorkspaceID, request.ID, request.Rows, request.Cols); err != nil {
 		return protocol.Message{}, err
 	}
 	return ptyResponse(message.WorkspaceID, protocol.MessagePtyOk, struct{}{})
@@ -113,7 +113,7 @@ func (h *Handler) ptyClose(ctx context.Context, message protocol.Message) (proto
 	if request.ID == "" {
 		return protocol.Message{}, fmt.Errorf("pty session ID is required")
 	}
-	if err := h.pty.Close(request.ID); err != nil {
+	if err := h.pty.Close(message.WorkspaceID, request.ID); err != nil {
 		return protocol.Message{}, err
 	}
 	return ptyResponse(message.WorkspaceID, protocol.MessagePtyOk, struct{}{})

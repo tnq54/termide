@@ -81,5 +81,5 @@ wiring.
 
 ### Task 6: Final verification
 
-- [ ] `go test ./...`, race, vet, diff-check, android/linux/windows builds.
-- [ ] Review diff, docs, commit docs.
+- [x] `go test ./...`, race, vet, diff-check, android/linux/windows builds.
+- [x] Review diff (fresh subagent review + fix pass), docs, commit docs.

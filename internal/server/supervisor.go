@@ -49,7 +49,7 @@ func (s *Supervisor) PTY() *PTYRegistry {
 
 // Handler serves the full workspace protocol with durable start/cancel.
 func (s *Supervisor) Handler() *Handler {
-	return &Handler{store: s.store, runtime: agent.NewTaskRuntime(s.store), supervisor: s}
+	return &Handler{store: s.store, runtime: agent.NewTaskRuntime(s.store), supervisor: s, pty: s.PTY()}
 }
 
 func (s *Supervisor) Start(ctx context.Context, workspaceID, taskID string, specs []agent.Spec) (store.TaskRun, error) {
@@ -289,6 +289,7 @@ func (s *Supervisor) Close(ctx context.Context) error {
 	}
 	s.mu.Unlock()
 	waitErr := s.Wait(ctx)
+	s.PTY().CloseAll()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return errors.Join(waitErr, errors.Join(s.errs...))

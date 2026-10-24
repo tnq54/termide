@@ -63,6 +63,22 @@ the process-tree limitation documented above still applies.
   failures reported inline.
 - [x] Full suite, race, vet and cross-builds passed.
 
+## True server-push + PTY streaming
+
+- [x] RED→GREEN: `subscribe_stream` trả replay bù rồi push event mới qua
+  Serve/ServeControl; bridge bơm một chiều; client đóng stream không ảnh
+  hưởng connection khác.
+- [x] RED→GREEN: typed `SubscribeStream`/`Stream` API với catch-up, filter
+  stale event, fallback wait-loop trong dashboard khi dial lỗi.
+- [x] RED→GREEN: daemon-scoped PTY registry (open/write/read/resize/close,
+  ring 256 KiB, idle reap 30 phút); panel terminal tương tác với poll 200ms.
+- [x] Phát hiện và sửa bug thật: phím `t` chưa bao giờ vào được panel terminal.
+- [x] Fresh review + fix pass: nil-PTy trong Supervisor.Handler, cross-workspace
+  PTY hijack, stale poll/stream generation, Next skip stale, open timeout,
+  RWMutex chống fd-reuse, timer churn, sweep + CloseAll.
+- [x] `run_command` giữ nguyên cho automation; full suite, race, vet,
+  cross-builds passed.
+
 ## Quick terminal commands
 
 - [x] RED→GREEN: `run_command` executes safe commands in the workspace root,

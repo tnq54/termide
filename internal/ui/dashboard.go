@@ -26,7 +26,7 @@ type dashboardState struct {
 	waiting      bool
 	streaming    bool
 	stream       *client.Stream
-	streamCancel context.CancelFunc
+	streamGen    uint64
 	detailOffset int
 }
 
@@ -232,6 +232,7 @@ func (m Model) receiveDashboard(result dashboardResult) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.dialStream != nil {
+			m.dashboard.streamGen++
 			return m, m.openStreamCommand(result.snapshot.Task.ID, result.snapshot.NextSequence)
 		}
 		if cmd := m.waitCommand(); cmd != nil {

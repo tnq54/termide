@@ -57,8 +57,11 @@ func (b *Bridge) Serve(ctx context.Context, session io.ReadWriteCloser) error {
 }
 
 // pumpStream forwards pushed frames control→session until either side ends.
-// A background drain watches the session so a client disconnect unblocks the
-// pump by closing the control connection.
+// Like an HTTP CONNECT tunnel, the connection carries no further requests
+// after the upgrade: post-upgrade client bytes are drained and ignored. A
+// background drain watches the session so a client disconnect unblocks the
+// pump by closing the control connection. Both deferred closes tolerate
+// double-close (processStream.Close is once-guarded; net.Pipe errors ignored).
 func (b *Bridge) pumpStream(session io.ReadWriteCloser) error {
 	go func() {
 		_, _ = io.Copy(io.Discard, session)

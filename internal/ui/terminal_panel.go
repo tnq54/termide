@@ -23,6 +23,7 @@ type termOpenedResult struct {
 }
 
 type termReadResult struct {
+	id   string
 	data []byte
 	next uint64
 	err  error
@@ -70,21 +71,21 @@ func (m Model) termReadCommand() tea.Cmd {
 	id, after := m.termPtyID, m.termPtyNext
 	payload, err := json.Marshal(protocol.PtyTarget{ID: id, After: after})
 	if err != nil {
-		return func() tea.Msg { return termReadResult{err: err} }
+		return func() tea.Msg { return termReadResult{id: id, err: err} }
 	}
 	return func() tea.Msg {
 		response, err := m.termCall(protocol.Message{Type: protocol.MessagePtyRead, WorkspaceID: m.workspace.ID, Payload: payload})
 		if err != nil {
-			return termReadResult{err: err}
+			return termReadResult{id: id, err: err}
 		}
 		if response.Type != protocol.MessagePtyOutput || response.WorkspaceID != m.workspace.ID {
-			return termReadResult{err: fmt.Errorf("unexpected pty read response")}
+			return termReadResult{id: id, err: fmt.Errorf("unexpected pty read response")}
 		}
 		var output protocol.PtyOutput
 		if err := json.Unmarshal(response.Payload, &output); err != nil || output.ID != id {
-			return termReadResult{err: fmt.Errorf("invalid pty read response")}
+			return termReadResult{id: id, err: fmt.Errorf("invalid pty read response")}
 		}
-		return termReadResult{data: output.Data, next: output.Next}
+		return termReadResult{id: id, data: output.Data, next: output.Next}
 	}
 }
 
@@ -143,6 +144,18 @@ func (m Model) receiveTermOpened(result termOpenedResult) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.Panel != PanelTerminal {
+		// Left before the open completed: release the orphan session.
+		id := result.id
+		payload, err := json.Marshal(protocol.PtyTarget{ID: id})
+		if err != nil {
+			return m, nil
+		}
+		return m, func() tea.Msg {
+			_, _ = m.termCall(protocol.Message{Type: protocol.MessagePtyClose, WorkspaceID: m.workspace.ID, Payload: payload})
+			return nil
+		}
+	}
 	m.termPtyID = result.id
 	m.termPtyOpen = true
 	m.termPtyNext = 0
@@ -151,6 +164,10 @@ func (m Model) receiveTermOpened(result termOpenedResult) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) receiveTermRead(result termReadResult) (tea.Model, tea.Cmd) {
+	if result.id != m.termPtyID {
+		// Stale poll from a previous session: discard, keep the live one.
+		return m, nil
+	}
 	if result.err != nil {
 		m.termPtyOpen = false
 		m.Status = result.err.Error()

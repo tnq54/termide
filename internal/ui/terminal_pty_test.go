@@ -134,6 +134,37 @@ func TestTerminalScrollStaysInBounds(t *testing.T) {
 	}
 }
 
+func TestTerminalDropsStalePollResult(t *testing.T) {
+	fake := &ptyFake{}
+	m := ptyFixture(fake)
+	m.termPtyID = "pty-new"
+	m.termPtyOpen = true
+	// Fake only knows pty-1; force a stale result for the previous session.
+	stale := termReadResult{id: "pty-old", data: []byte("ghost"), next: 5}
+	next, follow := m.receiveTermRead(stale)
+	m = next.(Model)
+	if follow != nil || len(m.termOutput) != 0 {
+		t.Fatal("stale poll corrupted the new session")
+	}
+}
+
+func TestTerminalRejectsForeignReadResponse(t *testing.T) {
+	remote := dashboardReply(func(protocol.Message) (protocol.Message, error) {
+		payload, _ := json.Marshal(protocol.PtyOutput{ID: "pty-1", Data: []byte("x")})
+		return protocol.Message{Type: protocol.MessagePtyOutput, WorkspaceID: "other", Payload: payload}, nil
+	})
+	m := NewRemoteModel(remote, domain.Workspace{ID: "w"})
+	m.ready = true
+	m.Panel = PanelTerminal
+	m.termPtyID = "pty-1"
+	m.termPtyOpen = true
+	next, _ := m.Update(m.termReadCommand()())
+	m = next.(Model)
+	if m.termPtyOpen || len(m.termOutput) != 0 {
+		t.Fatal("foreign response accepted")
+	}
+}
+
 func TestTerminalEscapeClosesSession(t *testing.T) {
 	fake := &ptyFake{}
 	m := ptyFixture(fake)

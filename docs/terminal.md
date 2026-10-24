@@ -2,6 +2,8 @@
 
 Panel terminal (`t` từ dashboard hoặc task detail) mở một shell tương tác
 trong workspace root trên VPS qua PTY thật (`creack/pty`, `TERM=xterm-256color`).
+Chỉ hỗ trợ VPS Linux: build Windows vẫn biên dịch nhưng mở session sẽ lỗi vì
+không có `sh`/PTY.
 
 | Phím | Thao tác |
 |---|---|

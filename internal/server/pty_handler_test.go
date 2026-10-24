@@ -83,6 +83,15 @@ func TestPtyOpenWriteReadClose(t *testing.T) {
 	}
 }
 
+func TestPtyRejectsEmptySessionID(t *testing.T) {
+	h, ctx := ptyHandlerFixture(t)
+	for _, msgType := range []protocol.MessageType{protocol.MessagePtyWrite, protocol.MessagePtyRead, protocol.MessagePtyResize, protocol.MessagePtyClose} {
+		if _, err := h.Handle(ctx, protocol.Message{Type: msgType, WorkspaceID: "w", Payload: mustJSON(t, protocol.PtyTarget{})}); err == nil {
+			t.Fatalf("%s accepted empty session ID", msgType)
+		}
+	}
+}
+
 func TestPtyRejectsForeignWorkspace(t *testing.T) {
 	h, ctx := ptyHandlerFixture(t)
 	raw, _ := json.Marshal(protocol.PtyOpenRequest{Rows: 24, Cols: 80})

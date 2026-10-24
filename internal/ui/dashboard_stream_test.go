@@ -145,6 +145,50 @@ func TestStreamDialErrorFallsBackToWait(t *testing.T) {
 	}
 }
 
+func TestStaleStreamEventIsIgnored(t *testing.T) {
+	m, _ := streamModel(t)
+	m.dashboard.streaming = true
+	m.dashboard.streamGen = 2
+	next, cmd := m.receiveStreamEvent(streamEventResult{gen: 1, event: domain.EventEnvelope{WorkspaceID: "w", TaskID: "t", AgentID: "a", Sequence: 9, Type: domain.EventOutput, Payload: []byte(`{"Output":"stale"}`)}})
+	m = next.(Model)
+	if cmd != nil || len(m.dashboard.logs) != 0 {
+		t.Fatal("stale stream event was applied")
+	}
+	if !m.dashboard.streaming {
+		t.Fatal("live stream was killed by stale completion")
+	}
+}
+
+func TestStreamOpenTimeoutFallsBackToWait(t *testing.T) {
+	old := streamOpenTimeout
+	streamOpenTimeout = 100 * time.Millisecond
+	defer func() { streamOpenTimeout = old }()
+	m := NewRemoteModel(dashboardReply(func(protocol.Message) (protocol.Message, error) {
+		return protocol.Message{}, nil
+	}), domain.Workspace{ID: "w"})
+	m.ready = true
+	m.Panel = PanelAgents
+	m.dashboard.snapshot = &domain.TaskSnapshot{Task: domain.Task{ID: "t", WorkspaceID: "w", Status: domain.TaskRunning}, NextSequence: 0}
+	m = m.WithStreamDialer(func(ctx context.Context) (io.ReadWriteCloser, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	next, cmd := m.receiveDashboard(dashboardResult{
+		kind:     protocol.MessageTaskSnapshot,
+		snapshot: domain.TaskSnapshot{Task: domain.Task{ID: "t", WorkspaceID: "w", Status: domain.TaskRunning}, NextSequence: 0},
+	})
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("open not scheduled")
+	}
+	next, follow := m.Update(cmd())
+	m = next.(Model)
+	if m.dashboard.streaming {
+		t.Fatal("hung dial produced a stream")
+	}
+	_ = follow
+}
+
 func TestStreamStopsOnTerminalSnapshot(t *testing.T) {
 	m, _ := streamModel(t)
 	m.dashboard.streaming = true

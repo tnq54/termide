@@ -53,6 +53,8 @@ func (h *Handler) serveStream(ctx context.Context, stream io.ReadWriteCloser, re
 			cursor = event.Sequence
 		}
 	}
+	timer := time.NewTimer(streamPollEvery)
+	defer timer.Stop()
 	for {
 		if err := pushCtx.Err(); err != nil {
 			return err
@@ -68,10 +70,11 @@ func (h *Handler) serveStream(ctx context.Context, stream io.ReadWriteCloser, re
 			}
 			cursor = event.Sequence
 		}
+		timer.Reset(streamPollEvery)
 		select {
 		case <-pushCtx.Done():
 			return pushCtx.Err()
-		case <-time.After(streamPollEvery):
+		case <-timer.C:
 		}
 	}
 }

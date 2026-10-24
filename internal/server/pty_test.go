@@ -11,16 +11,16 @@ func TestPTYEchoesWrittenInput(t *testing.T) {
 	r := NewPTYRegistry()
 	defer r.CloseAll()
 	ctx := context.Background()
-	id, err := r.Open(ctx, t.TempDir(), 24, 80)
+	id, err := r.Open(ctx, "w", t.TempDir(), 24, 80)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Write(ctx, id, []byte("echo hello-pty\n")); err != nil {
+	if err := r.Write(ctx, "w", id, []byte("echo hello-pty\n")); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		data, next, err := r.Read(ctx, id, 0)
+		data, next, err := r.Read(ctx, "w", id, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -41,39 +41,42 @@ func TestPTYReadReturnsOnlyNewBytes(t *testing.T) {
 	r := NewPTYRegistry()
 	defer r.CloseAll()
 	ctx := context.Background()
-	id, err := r.Open(ctx, t.TempDir(), 24, 80)
+	id, err := r.Open(ctx, "w", t.TempDir(), 24, 80)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Write(ctx, id, []byte("echo marker-one\n")); err != nil {
+	if err := r.Write(ctx, "w", id, []byte("echo marker-one\n")); err != nil {
 		t.Fatal(err)
 	}
+	// Wait for both the input echo and the command output: the line
+	// discipline echoes input immediately, even before a slow shell prints
+	// its first prompt, so byte order varies with startup timing.
 	var next uint64
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		full, cursor, err := r.Read(ctx, id, 0)
+		full, cursor, err := r.Read(ctx, "w", id, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(full), "marker-one") {
+		if strings.Count(string(full), "marker-one") >= 2 {
 			next = cursor
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("missing marker-one in %q", full)
+			t.Fatalf("missing marker-one output in %q", full)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if err := r.Write(ctx, id, []byte("echo marker-two\n")); err != nil {
+	if err := r.Write(ctx, "w", id, []byte("echo marker-two\n")); err != nil {
 		t.Fatal(err)
 	}
 	deadline = time.Now().Add(5 * time.Second)
 	for {
-		data, _, err := r.Read(ctx, id, next)
+		data, _, err := r.Read(ctx, "w", id, next)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(data), "marker-two") {
+		if strings.Count(string(data), "marker-two") >= 2 {
 			if strings.Contains(string(data), "marker-one") {
 				t.Fatalf("stale bytes returned: %q", data)
 			}
@@ -90,16 +93,16 @@ func TestPTYUnknownSessionErrors(t *testing.T) {
 	r := NewPTYRegistry()
 	defer r.CloseAll()
 	ctx := context.Background()
-	if err := r.Write(ctx, "missing", []byte("x")); err == nil {
+	if err := r.Write(ctx, "w", "missing", []byte("x")); err == nil {
 		t.Fatal("write to missing session accepted")
 	}
-	if _, _, err := r.Read(ctx, "missing", 0); err == nil {
+	if _, _, err := r.Read(ctx, "w", "missing", 0); err == nil {
 		t.Fatal("read from missing session accepted")
 	}
-	if err := r.Resize(ctx, "missing", 24, 80); err == nil {
+	if err := r.Resize(ctx, "w", "missing", 24, 80); err == nil {
 		t.Fatal("resize of missing session accepted")
 	}
-	if err := r.Close("missing"); err == nil {
+	if err := r.Close("w", "missing"); err == nil {
 		t.Fatal("close of missing session accepted")
 	}
 }
@@ -109,15 +112,15 @@ func TestPTYReapsIdleSessions(t *testing.T) {
 	r.idle = 100 * time.Millisecond
 	defer r.CloseAll()
 	ctx := context.Background()
-	id, err := r.Open(ctx, t.TempDir(), 24, 80)
+	id, err := r.Open(ctx, "w", t.TempDir(), 24, 80)
 	if err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(200 * time.Millisecond)
-	if _, err := r.Open(ctx, t.TempDir(), 24, 80); err != nil {
+	if _, err := r.Open(ctx, "w", t.TempDir(), 24, 80); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := r.Read(ctx, id, 0); err == nil {
+	if _, _, err := r.Read(ctx, "w", id, 0); err == nil {
 		t.Fatal("idle session was not reaped")
 	}
 }
