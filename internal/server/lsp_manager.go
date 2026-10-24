@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"termide/internal/lsp"
+	"termide/internal/protocol"
 )
 
 // LSPManager keeps one language server per workspace root, started on demand
@@ -72,6 +74,54 @@ func (m *LSPManager) Hover(ctx context.Context, workspaceID, root, rel string, l
 		return "", err
 	}
 	return client.Hover(ctx, uri, line, character)
+}
+
+// Diagnostics ensures the file is open on the server and returns cached
+// problems, waiting briefly for the server's first verdict. An empty result
+// means the file is clean, not that the server is silent.
+func (m *LSPManager) Diagnostics(ctx context.Context, workspaceID, root, rel string) ([]protocol.LspDiagnostic, error) {
+	if workspaceID == "" || root == "" {
+		return nil, fmt.Errorf("workspace identity is required")
+	}
+	if !strings.HasSuffix(strings.ToLower(rel), ".py") {
+		return nil, fmt.Errorf("no language server for this file type")
+	}
+	clean, err := checkPathInsideRoot(root, rel)
+	if err != nil {
+		return nil, err
+	}
+	text, err := os.ReadFile(clean)
+	if err != nil {
+		return nil, err
+	}
+	client, err := m.serverFor(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	uri := "file://" + clean
+	if err := client.DidOpen(ctx, uri, "python", string(text)); err != nil {
+		return nil, err
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		items := client.Diagnostics(uri)
+		if len(items) > 0 || time.Now().After(deadline) {
+			out := make([]protocol.LspDiagnostic, 0, len(items))
+			for _, item := range items {
+				out = append(out, protocol.LspDiagnostic{
+					Line: item.Line, Character: item.Character,
+					EndLine: item.EndLine, EndCharacter: item.EndCharacter,
+					Severity: item.Severity, Message: item.Message,
+				})
+			}
+			return out, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
 }
 
 func checkPathInsideRoot(root, rel string) (string, error) {

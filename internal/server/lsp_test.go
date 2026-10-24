@@ -120,3 +120,73 @@ func TestLspHoverRequiresConfiguredServer(t *testing.T) {
 		t.Fatal("unconfigured server accepted")
 	}
 }
+
+const fakeLspPublishing = `import json,sys
+def read_msg():
+    length = 0
+    while True:
+        line = sys.stdin.buffer.readline().decode()
+        if not line or line in ("\r\n", "\n"):
+            break
+        if line.lower().startswith("content-length:"):
+            length = int(line.split(":")[1].strip())
+    return json.loads(sys.stdin.buffer.read(length).decode()) if length else None
+def write_msg(obj):
+    data = json.dumps(obj).encode()
+    sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(data) + data)
+    sys.stdout.buffer.flush()
+while True:
+    msg = read_msg()
+    if msg is None:
+        break
+    method = msg.get("method", "")
+    mid = msg.get("id")
+    if method == "initialize":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": {"capabilities": {}}})
+    elif method == "textDocument/didOpen":
+        uri = msg["params"]["textDocument"]["uri"]
+        write_msg({"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": {"uri": uri, "diagnostics": [{"range": {"start": {"line": 0, "character": 4}, "end": {"line": 0, "character": 7}}, "severity": 1, "message": "undefined name"}]}})
+    elif method == "shutdown":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": None})
+    elif method == "exit":
+        break
+`
+
+func TestLspDiagnosticsEndToEnd(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	script := filepath.Join(t.TempDir(), "fake-lsp.py")
+	if err := os.WriteFile(script, []byte(fakeLspPublishing), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateWorkspace(ctx, domain.Workspace{ID: "w", Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "x.py"), []byte("x = foo\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(s)
+	defer h.Close()
+	h.lsp = NewLSPManager("python3", []string{script})
+	h.lspOwned = true
+	raw, _ := json.Marshal(protocol.LspDiagnosticsRequest{Path: "x.py"})
+	response, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspDiagnostics, WorkspaceID: "w", Payload: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Type != protocol.MessageLspDiagnosticsResult {
+		t.Fatalf("response = %#v", response)
+	}
+	var result protocol.LspDiagnosticsResult
+	if err := json.Unmarshal(response.Payload, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 1 || result.Items[0].Message != "undefined name" {
+		t.Fatalf("result = %#v", result)
+	}
+}

@@ -21,6 +21,7 @@ Khi trạng thái là `connected`:
 | Esc trong editor | Cất tab hiện tại, quay lại danh sách nếu đã lưu |
 | Ctrl+G trong editor | Bỏ thay đổi chưa lưu và đóng tab |
 | Ctrl+N / Ctrl+P trong editor | Tab kế tiếp / tab trước (vòng tròn) |
+| Ctrl+K trong editor | Hover LSP tại cursor (file `.py`, cần `--lsp-python` ở server) |
 
 Trong editor các chữ `q`, `a`, `e` là nội dung, không phải phím điều hướng.
 Ctrl+C không thoát khi bất kỳ tab nào chưa lưu hoặc Save còn đang chờ xác nhận;
@@ -47,6 +48,10 @@ Save đang bay để giữ đúng mapping xác nhận.
 - Kiểm tra hash và rename không phải transaction với process ngoài TermIDE.
   Nếu công cụ khác ghi đúng giữa hai thao tác, vẫn có thể xảy ra race. Không tự merge.
 - Undo/redo khôi phục text và đặt cursor ở cuối nội dung; chưa khôi phục lựa chọn/cursor cũ.
-- Chưa có syntax highlighting, LSP, tạo/xóa file hay clipboard hệ điều hành.
+- LSP: hover (`Ctrl+K`) và problems tự động cho file `.py` khi server chạy với
+  `--lsp-python` (đường dẫn tới language server, ví dụ `pylsp`); file khác báo
+  "no language server for this file type". Chưa có completion, signature help,
+  rename hay code action.
+- Chưa có syntax highlighting, tạo/xóa file hay clipboard hệ điều hành.
 
 Sau lỗi kết nối, chưa có tự reconnect; giữ/copy nội dung chưa lưu trước khi đóng client.

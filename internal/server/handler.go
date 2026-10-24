@@ -97,7 +97,7 @@ func (h *Handler) Handle(ctx context.Context, message protocol.Message) (protoco
 		return h.runCommand(ctx, message)
 	case protocol.MessagePtyOpen, protocol.MessagePtyWrite, protocol.MessagePtyRead, protocol.MessagePtyResize, protocol.MessagePtyClose:
 		return h.handlePty(ctx, message)
-	case protocol.MessageLspHover:
+	case protocol.MessageLspHover, protocol.MessageLspDiagnostics:
 		return h.handleLsp(ctx, message)
 	case protocol.MessageCreateTask:
 		if message.WorkspaceID == "" || message.TaskID == "" {

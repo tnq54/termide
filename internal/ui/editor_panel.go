@@ -207,11 +207,14 @@ func (m Model) receiveFile(result fileResult) (tea.Model, tea.Cmd) {
 		m.files.undo = nil
 		m.files.redo = nil
 		m.Status = "file opened"
-		return m, m.files.input.Focus()
+		return m, tea.Batch(m.files.input.Focus(), m.diagnosticsCommand(m.files.document.Path))
 	case protocol.MessageSaveFile:
 		// Save acknowledges a snapshot. Edits made during the request remain dirty.
 		m.files.document = result.response.Document
 		m.Status = "file saved"
+		if m.files.document != nil {
+			return m, m.diagnosticsCommand(m.files.document.Path)
+		}
 	}
 	return m, nil
 }
@@ -370,6 +373,7 @@ func (m Model) editorView() string {
 		lines = append(lines, safeLabel(m.files.document.Path)+marker)
 		lines = append(lines, strings.Split(m.files.input.View(), "\n")...)
 		lines = renderHover(lines, m.hover, width)
+		lines = renderProblems(lines, m.diags, width)
 		lines = append(lines, "Ctrl+S save | Esc files | Ctrl+N/P tabs | Ctrl+K hover", "Ctrl+Z/Y undo/redo | Ctrl+G discard")
 	} else {
 		lines = append(lines, "Files: "+safeLabel(m.files.folder))

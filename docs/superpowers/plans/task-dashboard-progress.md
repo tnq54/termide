@@ -63,6 +63,16 @@ the process-tree limitation documented above still applies.
   failures reported inline.
 - [x] Full suite, race, vet and cross-builds passed.
 
+## LSP hover + diagnostics
+
+- [x] RED→GREEN: daemon-scoped LSP manager (một server mỗi workspace root,
+  didOpen một lần mỗi URI, thu notification publishDiagnostics).
+- [x] RED→GREEN: protocol `lsp.diagnostics`, handler kiểm workspace/`.py`/
+  path-escape, chờ verdict đầu tối đa 2s.
+- [x] RED→GREEN: TUI tự fetch diagnostics khi mở/lưu file, render section
+  "problems", từ chối response lạ, báo lỗi giữ trạng thái.
+- [x] Full suite, race (ui/server/lsp), vet, cross-builds pass.
+
 ## LSP hover + launcher APK
 
 - [x] RED→GREEN: JSON-RPC conn (call/dispatch/notification), client lifecycle
