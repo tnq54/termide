@@ -5,6 +5,8 @@ const (
 	MessageLspHoverResult       MessageType = "lsp.hover_result"
 	MessageLspDiagnostics       MessageType = "lsp.diagnostics"
 	MessageLspDiagnosticsResult MessageType = "lsp.diagnostics_result"
+	MessageLspComplete          MessageType = "lsp.complete"
+	MessageLspCompleteResult    MessageType = "lsp.complete_result"
 )
 
 // LspHoverRequest asks for hover contents at a zero-based line and rune-offset
@@ -38,4 +40,25 @@ type LspDiagnostic struct {
 // LspDiagnosticsResult carries cached diagnostics, possibly empty.
 type LspDiagnosticsResult struct {
 	Items []LspDiagnostic `json:"items"`
+}
+
+// LspCompleteRequest asks for completion items at a zero-based line and
+// rune-offset character in a workspace-relative file.
+type LspCompleteRequest struct {
+	Path      string `json:"path"`
+	Line      int    `json:"line"`
+	Character int    `json:"character"`
+}
+
+// LspCompleteItem is one completion suggestion rendered for the TUI.
+type LspCompleteItem struct {
+	Label  string `json:"label"`
+	Kind   int    `json:"kind"`
+	Detail string `json:"detail"`
+	Insert string `json:"insert"`
+}
+
+// LspCompleteResult carries completion items, possibly empty.
+type LspCompleteResult struct {
+	Items []LspCompleteItem `json:"items"`
 }

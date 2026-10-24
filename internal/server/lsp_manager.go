@@ -124,6 +124,46 @@ func (m *LSPManager) Diagnostics(ctx context.Context, workspaceID, root, rel str
 	}
 }
 
+// Complete returns completion items for a workspace-relative Python file.
+func (m *LSPManager) Complete(ctx context.Context, workspaceID, root, rel string, line, character int) ([]protocol.LspCompleteItem, error) {
+	if workspaceID == "" || root == "" {
+		return nil, fmt.Errorf("workspace identity is required")
+	}
+	if !strings.HasSuffix(strings.ToLower(rel), ".py") {
+		return nil, fmt.Errorf("no language server for this file type")
+	}
+	if line < 0 || character < 0 {
+		return nil, fmt.Errorf("line and character must be non-negative")
+	}
+	clean, err := checkPathInsideRoot(root, rel)
+	if err != nil {
+		return nil, err
+	}
+	text, err := os.ReadFile(clean)
+	if err != nil {
+		return nil, err
+	}
+	client, err := m.serverFor(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	uri := "file://" + clean
+	if err := client.DidOpen(ctx, uri, "python", string(text)); err != nil {
+		return nil, err
+	}
+	items, err := client.Complete(ctx, uri, line, character)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]protocol.LspCompleteItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, protocol.LspCompleteItem{
+			Label: item.Label, Kind: item.Kind, Detail: item.Detail, Insert: item.Insert,
+		})
+	}
+	return out, nil
+}
+
 func checkPathInsideRoot(root, rel string) (string, error) {
 	if rel == "" || filepath.IsAbs(rel) {
 		return "", fmt.Errorf("path must be workspace-relative")
