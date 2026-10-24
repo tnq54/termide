@@ -25,7 +25,12 @@ the process-tree limitation documented above still applies.
 - [x] Server bounds replay to 10,000 events and 2 MiB before serialization.
 - [x] Dashboard replays events after workspace reconnect when a task detail and
   cursor are already present, preserving task status and appending validated logs.
-- [ ] Live push and durable supervisor across reconnect remain future work.
+- [x] Durable supervisor: daemon owns task execution across SSH/stdio session
+  loss; expired-lease recovery relaunches runs without duplicates; cancel from
+  any session persists terminal state; single-daemon file lock enforced.
+- [x] Daemon lifecycle integration: session close mid-run still reaches
+  `completed`; reconnect observes final state via snapshot/replay.
+- [ ] Live push remains future work.
 
 ## Background execution (current behavior)
 

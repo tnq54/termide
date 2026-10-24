@@ -56,7 +56,7 @@ func (s *Store) GetTaskRun(ctx context.Context, taskID string) (TaskRun, error) 
 	var run TaskRun
 	var lease int64
 	var cancel int
-	err := s.db.QueryRowContext(ctx, `SELECT run_id,task_id,plan_json,owner,lease_until,attempt,cancel_requested,status,error FROM task_runs WHERE task_id=?`, taskID).
+	err := s.db.QueryRowContext(ctx, `SELECT run_id,task_id,plan_json,owner,lease_until,attempt,cancel_requested,status,error FROM task_runs WHERE task_id=? ORDER BY rowid DESC LIMIT 1`, taskID).
 		Scan(&run.RunID, &run.TaskID, &run.PlanJSON, &run.Owner, &lease, &run.Attempt, &cancel, &run.Status, &run.Error)
 	run.LeaseUntil = time.Unix(0, lease)
 	run.CancelRequested = cancel != 0
@@ -100,7 +100,7 @@ func (s *Store) RecoverExpiredRuns(ctx context.Context, owner string, now time.T
 		return nil, err
 	}
 	for i := range runs {
-		result, err := s.db.ExecContext(ctx, `UPDATE task_runs SET owner=?,lease_until=?,attempt=?,cancel_requested=0 WHERE run_id=? AND status=? AND lease_until<?`, owner, now.Add(time.Minute).UnixNano(), runs[i].Attempt+1, runs[i].RunID, string(domain.TaskRunning), now.UnixNano())
+		result, err := s.db.ExecContext(ctx, `UPDATE task_runs SET owner=?,lease_until=?,attempt=? WHERE run_id=? AND status=? AND lease_until<?`, owner, now.Add(time.Minute).UnixNano(), runs[i].Attempt+1, runs[i].RunID, string(domain.TaskRunning), now.UnixNano())
 		if err != nil {
 			return nil, err
 		}
@@ -115,7 +115,6 @@ func (s *Store) RecoverExpiredRuns(ctx context.Context, owner string, now time.T
 			runs[i].Owner = owner
 			runs[i].LeaseUntil = now.Add(time.Minute)
 			runs[i].Attempt++
-			runs[i].CancelRequested = false
 		} else {
 			runs[i].RunID = ""
 		}
@@ -127,6 +126,19 @@ func (s *Store) RecoverExpiredRuns(ctx context.Context, owner string, now time.T
 		}
 	}
 	return out, nil
+}
+
+func (s *Store) RenewRunLease(ctx context.Context, runID, owner string, leaseUntil time.Time) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE task_runs SET lease_until=? WHERE run_id=? AND owner=? AND status=?`, leaseUntil.UnixNano(), runID, owner, string(domain.TaskRunning))
+	if err != nil {
+		return err
+	}
+	if n, err := result.RowsAffected(); err != nil {
+		return err
+	} else if n != 1 {
+		return fmt.Errorf("task run lease is not owned")
+	}
+	return nil
 }
 
 func (s *Store) FinishTaskRun(ctx context.Context, runID string, status domain.TaskStatus, errText string) error {

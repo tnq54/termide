@@ -14,6 +14,9 @@ func (h *Handler) startTask(ctx context.Context, message protocol.Message) (prot
 	if message.WorkspaceID == "" || message.TaskID == "" {
 		return protocol.Message{}, fmt.Errorf("workspace and task IDs are required")
 	}
+	if h.supervisor != nil {
+		return h.startDurableTask(ctx, message)
+	}
 	if h.runner == nil {
 		return protocol.Message{}, fmt.Errorf("task runner is not configured")
 	}

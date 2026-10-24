@@ -13,15 +13,16 @@ import (
 )
 
 type Handler struct {
-	store     *store.Store
-	runtime   *agent.TaskRuntime
-	runner    agent.Runner
-	isolate   bool
-	jobsMu    sync.Mutex
-	jobs      sync.WaitGroup
-	cancels   map[string]context.CancelFunc
-	closed    bool
-	jobErrors []error
+	store      *store.Store
+	runtime    *agent.TaskRuntime
+	runner     agent.Runner
+	isolate    bool
+	supervisor *Supervisor
+	jobsMu     sync.Mutex
+	jobs       sync.WaitGroup
+	cancels    map[string]context.CancelFunc
+	closed     bool
+	jobErrors  []error
 }
 
 // Close cancels owned jobs and waits for final statuses before the store closes.

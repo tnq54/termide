@@ -74,5 +74,23 @@ Client kiểm tra response type, workspace identity, event identity, sequence t�
 nghiêm ngặt và giới hạn 10.000 event / 2 MiB; server áp dụng cùng giới hạn trước
 khi serialize. Đây là reconnect/replay một lần, chưa phải live push.
 
-`r` vẫn là thao tác refresh rõ ràng cho task snapshot. Job đang chạy vẫn bị hủy
-khi stdio session đóng; durable supervisor qua reconnect chưa có.
+`r` vẫn là thao tác refresh rõ ràng cho task snapshot.
+
+## Durable supervisor
+
+VPS chạy `termide-server --daemon --database <db> --socket <sock>` để sở hữu
+task execution độc lập với SSH session. Mỗi SSH connection chạy
+`termide-server --stdio --socket <sock>` chỉ là bridge forward frame tới
+daemon; đóng stdio/SSH không cancel task đang chạy.
+
+- `start_task` claim task atomically và ghi execution record (`run_id`,
+  plan, owner, lease) vào SQLite; start trùng hoặc khác workspace bị từ chối.
+- Daemon renew lease định kỳ; restart daemon recover các run hết lease:
+  run bị hủy theo intent được đánh `cancelled`, còn lại chạy lại từ plan
+  đã lưu mà không tạo duplicate.
+- `cancel` từ bất kỳ session nào ghi durable intent và dừng process group
+  của run; terminal state (`completed`/`failed`/`cancelled`) được persist
+  ngay cả khi không còn client nào kết nối.
+- Chỉ một daemon được giữ một database (file lock); daemon thứ hai bị từ chối.
+- Sau reconnect, dashboard dùng snapshot + replay event sau cursor để khôi
+  phục log mà không tự bịa trạng thái task.
