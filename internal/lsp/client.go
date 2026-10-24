@@ -291,6 +291,88 @@ func (c *Client) Complete(ctx context.Context, uri string, line, character int) 
 	return items, nil
 }
 
+// SignatureParameter is one parameter label of a signature.
+type SignatureParameter struct {
+	Label string
+}
+
+// Signature is one overload with its documentation and parameters.
+type Signature struct {
+	Label         string
+	Documentation string
+	Parameters    []SignatureParameter
+}
+
+// SignatureHelp carries overloads plus the server-selected active indices.
+type SignatureHelp struct {
+	Signatures      []Signature
+	ActiveSignature int
+	ActiveParameter int
+}
+
+type rawSignatureHelp struct {
+	Signatures []struct {
+		Label         string `json:"label"`
+		Documentation any    `json:"documentation"`
+		Parameters    []struct {
+			Label any `json:"label"`
+		} `json:"parameters"`
+	} `json:"signatures"`
+	ActiveSignature int `json:"activeSignature"`
+	ActiveParameter int `json:"activeParameter"`
+}
+
+func documentationText(value any) string {
+	switch text := value.(type) {
+	case string:
+		return text
+	case map[string]any:
+		if kind, _ := text["kind"].(string); kind == "markdown" || kind == "plaintext" {
+			if value, _ := text["value"].(string); value != "" {
+				return value
+			}
+		}
+	}
+	return ""
+}
+
+func parameterLabel(value any) string {
+	label, _ := value.(string)
+	return label
+}
+
+// SignatureHelp asks for signature help at a zero-based line and rune-offset
+// character. A nil Signatures means the server has nothing to show.
+func (c *Client) SignatureHelp(ctx context.Context, uri string, line, character int) (*SignatureHelp, error) {
+	conn, err := c.connFor()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := conn.Call(ctx, "textDocument/signatureHelp", map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+		"position":     map[string]any{"line": line, "character": character},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if string(raw) == "null" || len(raw) == 0 {
+		return &SignatureHelp{}, nil
+	}
+	var decoded rawSignatureHelp
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return nil, fmt.Errorf("decode signatureHelp: %w", err)
+	}
+	help := &SignatureHelp{ActiveSignature: decoded.ActiveSignature, ActiveParameter: decoded.ActiveParameter}
+	for _, sig := range decoded.Signatures {
+		entry := Signature{Label: sig.Label, Documentation: documentationText(sig.Documentation)}
+		for _, param := range sig.Parameters {
+			entry.Parameters = append(entry.Parameters, SignatureParameter{Label: parameterLabel(param.Label)})
+		}
+		help.Signatures = append(help.Signatures, entry)
+	}
+	return help, nil
+}
+
 // Close shuts the server down gracefully, then kills leftovers.
 func (c *Client) Close() error {
 	c.mu.Lock()
