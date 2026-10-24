@@ -438,6 +438,81 @@ func (c *Client) Rename(ctx context.Context, uri string, line, character int, ne
 	return changes, nil
 }
 
+// CodeAction is one executable fix or refactor offered by the server.
+type CodeAction struct {
+	Title string
+	Kind  string
+	Edits map[string][]TextEdit
+}
+
+type rawCodeAction struct {
+	Title string `json:"title"`
+	Kind  string `json:"kind"`
+	Edit  *struct {
+		Changes map[string][]rawTextEdit `json:"changes"`
+	} `json:"edit"`
+	Command *struct {
+		Title   string `json:"title"`
+		Command string `json:"command"`
+	} `json:"command"`
+}
+
+func (r rawCodeAction) toAction() CodeAction {
+	action := CodeAction{Title: r.Title, Kind: r.Kind, Edits: make(map[string][]TextEdit)}
+	if r.Edit == nil {
+		return action
+	}
+	for uri, rawEdits := range r.Edit.Changes {
+		for _, rawEdit := range rawEdits {
+			action.Edits[uri] = append(action.Edits[uri], TextEdit{
+				Start:   Position{Line: rawEdit.Range.Start.Line, Character: rawEdit.Range.Start.Character},
+				End:     Position{Line: rawEdit.Range.End.Line, Character: rawEdit.Range.End.Character},
+				NewText: rawEdit.NewText,
+			})
+		}
+	}
+	return action
+}
+
+// CodeAction asks for fixes/refactors covering a zero-based line range.
+// Command-only actions (no edits) are kept with empty Edits; the caller
+// decides whether they are applicable.
+func (c *Client) CodeAction(ctx context.Context, uri string, startLine, startChar, endLine, endChar int, diagnostics []Diagnostic) ([]CodeAction, error) {
+	conn, err := c.connFor()
+	if err != nil {
+		return nil, err
+	}
+	var contextParam map[string]any
+	if diagnostics == nil {
+		contextParam = map[string]any{"diagnostics": []any{}}
+	} else {
+		contextParam = map[string]any{"diagnostics": diagnostics}
+	}
+	raw, err := conn.Call(ctx, "textDocument/codeAction", map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+		"range": map[string]any{
+			"start": map[string]any{"line": startLine, "character": startChar},
+			"end":   map[string]any{"line": endLine, "character": endChar},
+		},
+		"context": contextParam,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if string(raw) == "null" || len(raw) == 0 {
+		return nil, nil
+	}
+	var items []rawCodeAction
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, fmt.Errorf("decode codeAction: %w", err)
+	}
+	actions := make([]CodeAction, 0, len(items))
+	for _, rawAction := range items {
+		actions = append(actions, rawAction.toAction())
+	}
+	return actions, nil
+}
+
 // Close shuts the server down gracefully, then kills leftovers.
 func (c *Client) Close() error {
 	c.mu.Lock()
