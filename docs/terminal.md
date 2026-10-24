@@ -1,21 +1,27 @@
-# Terminal lệnh nhanh
+# Terminal tương tác (PTY)
 
-Panel terminal (`t` từ dashboard) chạy một lệnh shell trong workspace root trên
-VPS và hiển thị output giới hạn. Không phải PTY đầy đủ: mỗi Enter là một
-request/response độc lập, không giữ shell tương tác giữa các lệnh.
+Panel terminal (`t` từ dashboard hoặc task detail) mở một shell tương tác
+trong workspace root trên VPS qua PTY thật (`creack/pty`, `TERM=xterm-256color`).
 
 | Phím | Thao tác |
 |---|---|
-| Gõ chữ | Soạn lệnh |
-| Enter | Chạy lệnh (tối đa 30 giây) |
-| ↑ / ↓, PageUp / PageDown | Cuộn output |
-| Esc | Quay về dashboard |
+| Gõ chữ, Enter, Tab, Backspace | Gửi thẳng vào shell |
+| ↑ / ↓ | Lịch sử lệnh của shell |
+| ← / →, Ctrl+C, Ctrl+D | Gửi mã điều khiển tương ứng |
+| PageUp / PageDown | Cuộn output trong TUI |
+| Esc | Đóng session, quay về dashboard |
 
-## Giới hạn an toàn
+## Cách hoạt động và giới hạn
 
-- Chỉ lệnh `Safe` theo classifier mới được chạy (`git status`, `pytest`, `ls`,
-  ...). Lệnh rỗng/blocked bị từ chối; lệnh cần approval bị từ chối với hướng
-  dẫn mở task thay vì chạy trực tiếp.
-- Mỗi lệnh chạy với `Dir` là workspace root; output gộp stdout+stderr, cắt ở
-  64 KiB kèm dấu `[truncated]`; exit code khác 0 hiện dòng `[exit N]`.
-- Phản hồi sai workspace bị loại; lỗi giữ nguyên lệnh đã soạn để sửa và thử lại.
+- Mỗi lần vào panel mở một session PTY mới (`pty.open` với kích thước màn
+  hình); TUI poll `pty.read` mỗi 200ms và nối output; Esc gửi `pty.close`.
+- Output giữ nguyên byte (kể cả mã màu ANSI); TUI không giả lập cursor VT đầy
+  đủ — các ứng dụng fullscreen (vim, top) hiển thị tuyến tính, không chuẩn.
+- Ring buffer server 256 KiB/session; client đọc theo offset tuyệt đối nên
+  reconnect trong cùng daemon vẫn thấy output cũ qua `pty.read`.
+- Session idle quá 30 phút bị thu hồi khi mở session mới. Session là tiến
+  trình con của daemon: restart daemon là mất shell, không recover như task.
+- Resize màn hình gửi `pty.resize`. Không gõ được khi session chưa mở xong;
+  lỗi poll dừng vòng lặp, giữ nội dung đã nhận — Esc rồi `t` để mở lại.
+- Lệnh một lần không tương tác (`git status`, `pytest`) vẫn có API
+  `run_command` riêng cho automation; panel này dành cho shell tương tác.

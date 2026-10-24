@@ -292,6 +292,13 @@ func (m Model) dashboardKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Status = "task history loaded"
 			return m, nil
 		case tea.KeyRunes:
+			if string(key.Runes) == "t" {
+				m.Panel = PanelTerminal
+				if m.remote != nil && m.ready && m.termPtyID == "" {
+					return m, m.termOpenCommand()
+				}
+				return m, nil
+			}
 			if string(key.Runes) == "f" {
 				m.diff.busy = true
 				m.Status = "loading task diff"
@@ -367,6 +374,11 @@ func (m Model) dashboardKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.files.busy = true
 				return m, m.fileCommand(protocol.MessageListFiles, protocol.FileRequest{Path: m.files.folder})
 			}
+		case "t":
+			m.Panel = PanelTerminal
+			if m.remote != nil && m.ready && m.termPtyID == "" {
+				return m, m.termOpenCommand()
+			}
 		case "f":
 			if len(m.dashboard.tasks) == 0 {
 				return m, nil
@@ -396,7 +408,7 @@ func (m Model) dashboardView() string {
 	}
 	lines := []string{"Task dashboard"}
 	var body []string
-	help := "Enter details | f diff | r refresh | l more"
+	help := "Enter details | f diff | t terminal | r refresh | l more"
 	if m.dashboard.snapshot != nil {
 		s := m.dashboard.snapshot
 		body = append(body, "Task: "+safeLabel(s.Task.Description), "Status: "+safeLabel(string(s.Task.Status)), "Agents:")
@@ -413,9 +425,9 @@ func (m Model) dashboardView() string {
 		body = append(body, m.dashboard.logs...)
 		start := min(m.dashboard.detailOffset, max(0, len(body)-m.dashboardRows()))
 		body = body[start:min(len(body), start+m.dashboardRows())]
-		help = "f diff | c cancel | r refresh | Esc back"
+		help = "f diff | t terminal | c cancel | r refresh | Esc back"
 		if len(s.Approvals) > 0 {
-			help = "a approve | d deny | f diff | c cancel | r refresh | Esc back"
+			help = "a approve | d deny | f diff | t terminal | c cancel | r refresh | Esc back"
 		}
 	} else {
 		if len(m.dashboard.tasks) == 0 {

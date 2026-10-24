@@ -36,10 +36,11 @@ type Model struct {
 	files           fileEditor
 	dashboard       dashboardState
 	diff            diffState
-	termInput       string
 	termOutput      []string
 	termScroll      int
-	termBusy        bool
+	termPtyID       string
+	termPtyNext     uint64
+	termPtyOpen     bool
 }
 
 func NewModel() Model {
@@ -58,8 +59,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.receiveStreamOpened(value)
 	case streamEventResult:
 		return m.receiveStreamEvent(value)
-	case terminalResult:
-		return m.receiveTerminal(value)
+	case termOpenedResult:
+		return m.receiveTermOpened(value)
+	case termReadResult:
+		return m.receiveTermRead(value)
+	case termWriteResult:
+		if value.err != nil {
+			m.Status = value.err.Error()
+		}
+		return m, nil
 	case diffResult:
 		return m.receiveDiff(value)
 	case dashboardReplayResult:
@@ -88,6 +96,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.Width, m.Height = value.Width, value.Height
+		resize := m.Panel == PanelTerminal && m.termPtyID != "" && m.termPtyOpen
 		m.files.width = max(1, value.Width)
 		m.files.height = max(1, value.Height-4)
 		m.files.input.SetWidth(m.files.width)
@@ -95,6 +104,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i := range m.files.tabs {
 			m.files.tabs[i].input.SetWidth(m.files.width)
 			m.files.tabs[i].input.SetHeight(m.files.height)
+		}
+		if resize {
+			return m, m.termResizeCommand()
 		}
 	case tea.KeyMsg:
 		if value.Type == tea.KeyCtrlC {
@@ -168,6 +180,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Panel = PanelAgents
 		case "t":
 			m.Panel = PanelTerminal
+			if m.remote != nil && m.ready && m.termPtyID == "" {
+				return m, m.termOpenCommand()
+			}
 		case "f":
 			m.Panel = PanelDiff
 		case "p":
