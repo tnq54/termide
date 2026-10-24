@@ -63,6 +63,13 @@ the process-tree limitation documented above still applies.
   failures reported inline.
 - [x] Full suite, race, vet and cross-builds passed.
 
+## LSP refactor (extract)
+
+- [x] RED→GREEN: `Ctrl+T` yêu cầu refactor dòng hiện tại với `only: ["refactor"]`,
+  tái dùng popup/apply/reload; fake server phân biệt refactor/source/quickfix.
+- [x] RED→GREEN: server test khép kín `only: ["refactor"]` tới LSP (kind + ID).
+- [x] Full suite, race, vet, cross-builds passed.
+
 ## LSP source action
 
 - [x] RED→GREEN: `only` filter đi qua client → server; fake server phân biệt

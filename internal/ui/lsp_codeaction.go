@@ -25,6 +25,21 @@ func (m Model) codeActionCommand(path string, startLine, startChar, endLine, end
 	return m.codeActionCommandFiltered(path, startLine, startChar, endLine, endChar, nil)
 }
 
+// refactorActionCommand requests refactor actions for the line under the
+// cursor, reused for the Ctrl+T "extract / refactor here" shortcut.
+func (m Model) refactorActionCommand(path string) tea.Cmd {
+	line, col := m.files.input.CursorLineCol()
+	_ = col
+	endChar := 0
+	if text := m.files.input.Value(); text != "" {
+		lines := strings.Split(text, "\n")
+		if line >= 0 && line < len(lines) {
+			endChar = len([]rune(lines[line]))
+		}
+	}
+	return m.codeActionCommandFiltered(path, line, 0, line, endChar, []string{"refactor"})
+}
+
 // sourceActionCommand requests file-level source actions over the whole
 // buffer, reused for the Ctrl+F "fix file" shortcut.
 func (m Model) sourceActionCommand(path string) tea.Cmd {

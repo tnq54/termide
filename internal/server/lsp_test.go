@@ -557,6 +557,8 @@ while True:
         uri = msg["params"]["textDocument"]["uri"]
         if only == ["source"]:
             write_msg({"jsonrpc": "2.0", "id": mid, "result": [{"title": "Organize imports", "kind": "source.organizeImports", "edit": {"changes": {uri: [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 2, "character": 0}}, "newText": "import a\nimport b\n"}]}}}]})
+        elif only == ["refactor"]:
+            write_msg({"jsonrpc": "2.0", "id": mid, "result": [{"title": "Extract variable", "kind": "refactor.extract", "edit": {"changes": {uri: [{"range": {"start": {"line": 0, "character": 4}, "end": {"line": 0, "character": 7}}, "newText": "tmp"}]}}}]})
         else:
             write_msg({"jsonrpc": "2.0", "id": mid, "result": [{"title": "Add missing import", "kind": "quickfix", "edit": {"changes": {uri: [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}}, "newText": "import os\n"}]}}}]})
     elif method == "shutdown":
@@ -598,6 +600,45 @@ func TestLspCodeActionForwardsOnlyFilter(t *testing.T) {
 	}
 	if len(result.Actions) != 1 || result.Actions[0].Kind != "source.organizeImports" {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestLspCodeActionForwardsRefactorFilter(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	script := filepath.Join(t.TempDir(), "fake-lsp.py")
+	if err := os.WriteFile(script, []byte(fakeLspOnlyFilter), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateWorkspace(ctx, domain.Workspace{ID: "w", Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "x.py"), []byte("x = foo(1)\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(s)
+	defer h.Close()
+	h.lsp = NewLSPManager("python3", []string{script})
+	h.lspOwned = true
+	raw, _ := json.Marshal(protocol.LspCodeActionRequest{Path: "x.py", StartLine: 0, StartChar: 0, EndLine: 0, EndChar: 9, Only: []string{"refactor"}})
+	response, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspCodeAction, WorkspaceID: "w", Payload: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result protocol.LspCodeActionList
+	if err := json.Unmarshal(response.Payload, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Actions) != 1 || result.Actions[0].Kind != "refactor.extract" {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(result.Actions[0].ID) == 0 {
+		t.Fatal("action ID missing")
 	}
 }
 
