@@ -31,6 +31,13 @@ func (h *Handler) handleDashboard(ctx context.Context, message protocol.Message)
 		if err != nil {
 			return response, err
 		}
+		if snapshot.Task.ID != "" {
+			approvals, err := h.store.ListPendingApprovals(ctx, message.TaskID)
+			if err != nil {
+				return response, err
+			}
+			snapshot.Approvals = approvals
+		}
 		response.Type = protocol.MessageTaskDetail
 		response.Payload, err = json.Marshal(snapshot)
 		return response, err
