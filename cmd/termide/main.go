@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -40,7 +41,9 @@ func main() {
 		}
 		defer remote.Close()
 		id := fmt.Sprintf("%x", sha256.Sum256([]byte(*host+"\x00"+*project)))
-		model = ui.NewRemoteModel(remote, domain.Workspace{ID: id, Host: *host, Root: *project, Name: *project})
+		model = ui.NewRemoteModel(remote, domain.Workspace{ID: id, Host: *host, Root: *project, Name: *project}).WithStreamDialer(func(ctx context.Context) (io.ReadWriteCloser, error) {
+			return client.DialSSHStream(ctx, *host)
+		})
 	}
 	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

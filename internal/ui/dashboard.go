@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
+	"termide/internal/client"
 	"termide/internal/domain"
 	"termide/internal/protocol"
 )
@@ -23,6 +24,9 @@ type dashboardState struct {
 	busy         bool
 	loadingMore  bool
 	waiting      bool
+	streaming    bool
+	stream       *client.Stream
+	streamCancel context.CancelFunc
 	detailOffset int
 }
 
@@ -223,6 +227,13 @@ func (m Model) receiveDashboard(result dashboardResult) (tea.Model, tea.Cmd) {
 		}
 		m.dashboard.logs = append(m.dashboard.logs, snapshotLogLines(result.snapshot.Events)...)
 		m.Status = "task detail loaded"
+		m.closeStream()
+		if terminalTask(result.snapshot.Task.Status) {
+			return m, nil
+		}
+		if m.dialStream != nil {
+			return m, m.openStreamCommand(result.snapshot.Task.ID, result.snapshot.NextSequence)
+		}
 		if cmd := m.waitCommand(); cmd != nil {
 			m.dashboard.waiting = true
 			return m, cmd
@@ -276,6 +287,7 @@ func (m Model) dashboardKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tea.KeyEsc, tea.KeyBackspace:
 			m.dashboard.snapshot = nil
 			m.dashboard.logs = nil
+			m.closeStream()
 			m.Panel = PanelDashboard
 			m.Status = "task history loaded"
 			return m, nil

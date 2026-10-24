@@ -26,7 +26,7 @@ type dashboardWaitResult struct {
 // waitCommand schedules one live-wait cycle from the current snapshot cursor.
 // It never sets busy: scrolling and commands keep working while waiting.
 func (m Model) waitCommand() tea.Cmd {
-	if m.remote == nil || !m.ready || m.dashboard.snapshot == nil || m.dashboard.waiting {
+	if m.remote == nil || !m.ready || m.dashboard.snapshot == nil || m.dashboard.waiting || m.dashboard.streaming {
 		return nil
 	}
 	if terminalTask(m.dashboard.snapshot.Task.Status) {

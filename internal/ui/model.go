@@ -29,6 +29,7 @@ type Model struct {
 	VPS             string
 	TaskID          string
 	remote          remoteCaller
+	dialStream      StreamDialer
 	workspace       workspaceConfig
 	ready           bool
 	saving          bool
@@ -53,6 +54,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.receiveDashboard(value)
 	case dashboardWaitResult:
 		return m.receiveDashboardWait(value)
+	case streamOpenedResult:
+		return m.receiveStreamOpened(value)
+	case streamEventResult:
+		return m.receiveStreamEvent(value)
 	case terminalResult:
 		return m.receiveTerminal(value)
 	case diffResult:
