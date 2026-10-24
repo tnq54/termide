@@ -43,6 +43,28 @@ func (b *Bridge) Serve(ctx context.Context, session io.ReadWriteCloser) error {
 		if err := protocol.Write(b.control, request); err != nil {
 			return err
 		}
+		if request.Type == protocol.MessageSubscribeStream {
+			return b.pumpStream(session)
+		}
+		response, err := protocol.Read(b.control)
+		if err != nil {
+			return err
+		}
+		if err := protocol.Write(session, response); err != nil {
+			return err
+		}
+	}
+}
+
+// pumpStream forwards pushed frames control→session until either side ends.
+// A background drain watches the session so a client disconnect unblocks the
+// pump by closing the control connection.
+func (b *Bridge) pumpStream(session io.ReadWriteCloser) error {
+	go func() {
+		_, _ = io.Copy(io.Discard, session)
+		b.control.Close()
+	}()
+	for {
 		response, err := protocol.Read(b.control)
 		if err != nil {
 			return err

@@ -22,6 +22,9 @@ func (h *Handler) Serve(ctx context.Context, input io.Reader, output io.Writer) 
 		if err != nil {
 			return err
 		}
+		if request.Type == protocol.MessageSubscribeStream {
+			return h.serveStream(ctx, streamAdapter{Reader: input, Writer: output}, request)
+		}
 		response, err := h.Handle(ctx, request)
 		if err != nil {
 			response = protocol.Message{Type: protocol.MessageError, Payload: []byte(err.Error())}

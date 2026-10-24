@@ -73,6 +73,12 @@ func (h *Handler) subscribe(ctx context.Context, message protocol.Message) (prot
 			return protocol.Message{}, err
 		}
 	}
+	return replayMessage(message.WorkspaceID, message.AfterSequence, events)
+}
+
+// replayMessage bounds and frames a replay payload shared by subscribe and
+// stream catch-up.
+func replayMessage(workspaceID string, after uint64, events []domain.EventEnvelope) (protocol.Message, error) {
 	if events == nil {
 		events = []domain.EventEnvelope{}
 	}
@@ -86,5 +92,5 @@ func (h *Handler) subscribe(ctx context.Context, message protocol.Message) (prot
 	if len(payload) > maxReplayPayloadBytes {
 		return protocol.Message{}, fmt.Errorf("replay payload exceeds limit")
 	}
-	return protocol.Message{Type: protocol.MessageReplay, WorkspaceID: message.WorkspaceID, AfterSequence: message.AfterSequence, Payload: payload}, nil
+	return protocol.Message{Type: protocol.MessageReplay, WorkspaceID: workspaceID, AfterSequence: after, Payload: payload}, nil
 }

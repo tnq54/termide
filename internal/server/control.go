@@ -27,6 +27,9 @@ func ServeControl(ctx context.Context, stream io.ReadWriteCloser, supervisor *Su
 		if err != nil {
 			return err
 		}
+		if request.Type == protocol.MessageSubscribeStream {
+			return handler.serveStream(ctx, stream, request)
+		}
 		response, err := handler.Handle(ctx, request)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
