@@ -72,6 +72,12 @@ Client có thể dùng helper typed `Remote.Subscribe` (hoặc request `subscrib
 với `AfterSequence` để lấy replay event đã lưu trong SQLite theo đúng workspace.
 Sau khi workspace mở lại, nếu dashboard còn task detail trong model, TUI tự replay
 các event sau cursor hiện tại và bổ sung log mà không tự thay đổi task status.
+
+`Remote.SubscribeWait` (request `subscribe` kèm `wait_ms`) long-poll tới khi có
+event mới hoặc hết thời gian chờ: server giữ request tối đa 30 giây, poll store
+mỗi 100ms và tôn trọng cancel. Hết chờ trả về replay rỗng, không phải lỗi.
+Caller giữ quyền chủ động gọi — không có background polling ngầm cạnh tranh
+với editor trên link SSH chậm.
 Client kiểm tra response type, workspace identity, event identity, sequence tăng
 nghiêm ngặt và giới hạn 10.000 event / 2 MiB; server áp dụng cùng giới hạn trước
 khi serialize. Đây là reconnect/replay một lần, chưa phải live push.

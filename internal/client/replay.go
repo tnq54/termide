@@ -4,10 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"termide/internal/domain"
 	"termide/internal/protocol"
 )
+
+// SubscribeWait long-polls for events after `after`, waiting up to wait for
+// new events. An empty result means the wait expired, not an error. The
+// caller stays in control: no background goroutine is started.
+func (c *Remote) SubscribeWait(ctx context.Context, workspaceID string, after uint64, wait time.Duration) ([]domain.EventEnvelope, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace ID is required")
+	}
+	if wait <= 0 {
+		return nil, fmt.Errorf("wait duration must be positive")
+	}
+	response, err := c.Call(ctx, protocol.Message{
+		Type:          protocol.MessageSubscribe,
+		WorkspaceID:   workspaceID,
+		AfterSequence: after,
+		WaitMs:        uint64(wait / time.Millisecond),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return decodeReplay(workspaceID, after, response)
+}
 
 const (
 	MaxReplayEvents       = 10000
@@ -28,6 +51,10 @@ func (c *Remote) Subscribe(ctx context.Context, workspaceID string, after uint64
 	if err != nil {
 		return nil, err
 	}
+	return decodeReplay(workspaceID, after, response)
+}
+
+func decodeReplay(workspaceID string, after uint64, response protocol.Message) ([]domain.EventEnvelope, error) {
 	if response.Type != protocol.MessageReplay || response.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("invalid replay response identity")
 	}

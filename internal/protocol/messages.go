@@ -29,6 +29,7 @@ type Message struct {
 	WorkspaceID   string                `json:"workspace_id,omitempty"`
 	TaskID        string                `json:"task_id,omitempty"`
 	AfterSequence uint64                `json:"after_sequence,omitempty"`
+	WaitMs        uint64                `json:"wait_ms,omitempty"`
 	Payload       []byte                `json:"payload,omitempty"`
 	Event         *domain.EventEnvelope `json:"event,omitempty"`
 }

@@ -32,6 +32,16 @@ the process-tree limitation documented above still applies.
   `completed`; reconnect observes final state via snapshot/replay.
 - [ ] Live push remains future work.
 
+## Long-poll subscribe
+
+- [x] RED→GREEN: `subscribe` with `wait_ms` blocks until new events arrive,
+  returns immediately when events exist, times out empty, and caps the wait
+  at 30 seconds.
+- [x] RED→GREEN: typed `Remote.SubscribeWait` sends the wait budget and
+  reuses replay identity/sequence validation.
+- [x] No background polling: the caller decides when to wait; full suite,
+  race, vet and cross-builds passed.
+
 ## Durable approval gate
 
 - [x] RED→GREEN: approvals persist in SQLite; resolve is single-winner,
