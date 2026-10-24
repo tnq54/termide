@@ -79,6 +79,8 @@ func (h *Handler) Handle(ctx context.Context, message protocol.Message) (protoco
 		return h.cancelTask(ctx, message)
 	case protocol.MessageApprove:
 		return h.approve(ctx, message)
+	case protocol.MessageRunCommand:
+		return h.runCommand(ctx, message)
 	case protocol.MessageCreateTask:
 		if message.WorkspaceID == "" || message.TaskID == "" {
 			return protocol.Message{}, fmt.Errorf("workspace and task IDs are required")

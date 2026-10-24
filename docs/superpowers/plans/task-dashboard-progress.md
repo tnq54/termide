@@ -53,6 +53,16 @@ the process-tree limitation documented above still applies.
 - [x] Documented worst case: manual commands queue up to 10s behind an
   in-flight wait on the serial transport.
 
+## Quick terminal commands
+
+- [x] RED→GREEN: `run_command` executes safe commands in the workspace root,
+  rejects blocked/approval-gated/foreign commands, caps output at 64 KiB and
+  reports exit codes.
+- [x] RED→GREEN: terminal panel types, runs on Enter, scrolls output, retains
+  input on error and rejects foreign responses.
+- [x] PTY interactivity remains future work; full suite, race, vet and
+  cross-builds passed.
+
 ## Multi-tab editor
 
 - [x] RED→GREEN: Enter stashes the active tab and opens into a new tab;

@@ -11,16 +11,17 @@ const MessageOpenWorkspace MessageType = "open_workspace"
 const MessageWorkspaceReady MessageType = "workspace_ready"
 
 const (
-	MessageHello      MessageType = "hello"
-	MessageSubscribe  MessageType = "subscribe"
-	MessageCreateTask MessageType = "create_task"
-	MessageStartTask  MessageType = "start_task"
-	MessageApprove    MessageType = "approve"
-	MessageCancel     MessageType = "cancel"
-	MessageRunCommand MessageType = "run_command"
-	MessageReplay     MessageType = "replay"
-	MessageEvent      MessageType = "event"
-	MessageError      MessageType = "error"
+	MessageHello         MessageType = "hello"
+	MessageSubscribe     MessageType = "subscribe"
+	MessageCreateTask    MessageType = "create_task"
+	MessageStartTask     MessageType = "start_task"
+	MessageApprove       MessageType = "approve"
+	MessageCancel        MessageType = "cancel"
+	MessageRunCommand    MessageType = "run_command"
+	MessageCommandResult MessageType = "command_result"
+	MessageReplay        MessageType = "replay"
+	MessageEvent         MessageType = "event"
+	MessageError         MessageType = "error"
 )
 
 type Message struct {

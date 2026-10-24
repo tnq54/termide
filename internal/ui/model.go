@@ -34,6 +34,10 @@ type Model struct {
 	saving          bool
 	files           fileEditor
 	dashboard       dashboardState
+	termInput       string
+	termOutput      []string
+	termScroll      int
+	termBusy        bool
 }
 
 func NewModel() Model {
@@ -48,6 +52,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.receiveDashboard(value)
 	case dashboardWaitResult:
 		return m.receiveDashboardWait(value)
+	case terminalResult:
+		return m.receiveTerminal(value)
 	case dashboardReplayResult:
 		return m.receiveDashboardReplay(value)
 	case remoteResult:
@@ -97,6 +103,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.Panel == PanelEditor {
 			return m.editorKey(value)
+		}
+		if m.Panel == PanelTerminal {
+			return m.terminalKey(value)
 		}
 		if m.Panel == PanelAgents && m.dashboard.snapshot != nil {
 			return m.dashboardKey(value)
@@ -180,6 +189,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	if m.Panel == PanelEditor {
 		return m.editorView()
+	}
+	if m.Panel == PanelTerminal {
+		return m.terminalView()
 	}
 	if m.Panel == PanelDashboard || (m.Panel == PanelAgents && m.dashboard.snapshot != nil) {
 		return m.dashboardView()
