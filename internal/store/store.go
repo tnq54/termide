@@ -10,7 +10,7 @@ import (
 	"termide/internal/domain"
 )
 
-//go:embed migrations/001_initial.sql
+//go:embed migrations/*.sql
 var migrations embed.FS
 
 type Store struct{ db *sql.DB }
@@ -28,14 +28,16 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	migration, err := migrations.ReadFile("migrations/001_initial.sql")
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-	if _, err := db.Exec(string(migration)); err != nil {
-		db.Close()
-		return nil, err
+	for _, name := range []string{"migrations/001_initial.sql", "migrations/002_durable_runs.sql"} {
+		migration, err := migrations.ReadFile(name)
+		if err != nil {
+			db.Close()
+			return nil, err
+		}
+		if _, err := db.Exec(string(migration)); err != nil {
+			db.Close()
+			return nil, err
+		}
 	}
 	return s, nil
 }
