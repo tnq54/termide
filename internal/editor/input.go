@@ -168,6 +168,10 @@ func (m Input) Update(message tea.Msg) (Input, tea.Cmd) {
 	m.ensureVisible()
 	return m, nil
 }
+
+// CursorLineCol returns the zero-based line and rune-offset column.
+func (m Input) CursorLineCol() (int, int) { return m.position() }
+
 func (m Input) position() (int, int) {
 	row, col := 0, 0
 	for _, r := range m.text[:m.cursor] {

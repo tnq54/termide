@@ -220,6 +220,10 @@ func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.files.document != nil {
 		switch key.Type {
 		case tea.KeyEsc:
+			if m.hover != "" {
+				m.hover = ""
+				return m, nil
+			}
 			if m.files.busy {
 				return m, nil
 			}
@@ -230,6 +234,12 @@ func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.files.stashActive()
 			m.files.input.Blur()
 			return m, nil
+		case tea.KeyCtrlK:
+			if m.remote == nil || !m.ready || m.files.busy {
+				return m, nil
+			}
+			line, col := m.files.input.CursorLineCol()
+			return m, m.hoverCommand(m.files.document.Path, line, col)
 		case tea.KeyCtrlG:
 			if m.files.busy {
 				return m, nil
@@ -278,6 +288,7 @@ func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.files.input, cmd = m.files.input.Update(key)
 		if m.files.input.Value() != before {
+			m.hover = ""
 			m.files.undo = append(m.files.undo, before)
 			m.files.redo = nil
 			if len(m.files.undo) > 50 {
@@ -358,7 +369,8 @@ func (m Model) editorView() string {
 		}
 		lines = append(lines, safeLabel(m.files.document.Path)+marker)
 		lines = append(lines, strings.Split(m.files.input.View(), "\n")...)
-		lines = append(lines, "Ctrl+S save | Esc files | Ctrl+N/P tabs", "Ctrl+Z/Y undo/redo | Ctrl+G discard")
+		lines = renderHover(lines, m.hover, width)
+		lines = append(lines, "Ctrl+S save | Esc files | Ctrl+N/P tabs | Ctrl+K hover", "Ctrl+Z/Y undo/redo | Ctrl+G discard")
 	} else {
 		lines = append(lines, "Files: "+safeLabel(m.files.folder))
 		visible := max(1, height-4)

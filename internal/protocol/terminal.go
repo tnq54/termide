@@ -46,6 +46,7 @@ type PtyOpened struct {
 	ID string `json:"id"`
 }
 
+
 // PtyOutput carries output after an absolute offset plus the new end offset.
 type PtyOutput struct {
 	ID   string `json:"id"`

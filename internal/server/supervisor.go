@@ -21,15 +21,18 @@ const (
 )
 
 type Supervisor struct {
-	store  *store.Store
-	runner agent.Runner
-	owner  string
-	pty    *PTYRegistry
-	mu     sync.Mutex
-	jobs   map[string]context.CancelFunc
-	wg     sync.WaitGroup
-	closed bool
-	errs   []error
+	store   *store.Store
+	runner  agent.Runner
+	owner   string
+	pty     *PTYRegistry
+	lsp     *LSPManager
+	lspBin  string
+	lspArgs []string
+	mu      sync.Mutex
+	jobs    map[string]context.CancelFunc
+	wg      sync.WaitGroup
+	closed  bool
+	errs    []error
 }
 
 func NewSupervisor(s *store.Store, runner agent.Runner, owner string) *Supervisor {
@@ -49,7 +52,27 @@ func (s *Supervisor) PTY() *PTYRegistry {
 
 // Handler serves the full workspace protocol with durable start/cancel.
 func (s *Supervisor) Handler() *Handler {
-	return &Handler{store: s.store, runtime: agent.NewTaskRuntime(s.store), supervisor: s, pty: s.PTY()}
+	return &Handler{store: s.store, runtime: agent.NewTaskRuntime(s.store), supervisor: s, pty: s.PTY(), lsp: s.LSP()}
+}
+
+// SetLSP configures the Python language server command used for hover.
+func (s *Supervisor) SetLSP(binary string, args []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lspBin = binary
+	s.lspArgs = append([]string(nil), args...)
+	s.lsp = nil
+}
+
+// LSP returns the daemon-scoped language server manager shared by durable
+// handlers. Nil binary means hover is unavailable until configured.
+func (s *Supervisor) LSP() *LSPManager {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lsp == nil {
+		s.lsp = NewLSPManager(s.lspBin, s.lspArgs)
+	}
+	return s.lsp
 }
 
 func (s *Supervisor) Start(ctx context.Context, workspaceID, taskID string, specs []agent.Spec) (store.TaskRun, error) {
@@ -290,6 +313,7 @@ func (s *Supervisor) Close(ctx context.Context) error {
 	s.mu.Unlock()
 	waitErr := s.Wait(ctx)
 	s.PTY().CloseAll()
+	s.LSP().Close()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return errors.Join(waitErr, errors.Join(s.errs...))
@@ -307,6 +331,7 @@ func (s *Supervisor) Shutdown(ctx context.Context) error {
 	s.mu.Unlock()
 	waitErr := s.Wait(ctx)
 	s.PTY().CloseAll()
+	s.LSP().Close()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return errors.Join(waitErr, errors.Join(s.errs...))

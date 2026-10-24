@@ -1,0 +1,122 @@
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"termide/internal/domain"
+	"termide/internal/protocol"
+	"termide/internal/store"
+)
+
+const fakeLspPython = `import json,sys
+def read_msg():
+    length = 0
+    while True:
+        line = sys.stdin.buffer.readline().decode()
+        if not line or line in ("\r\n", "\n"):
+            break
+        if line.lower().startswith("content-length:"):
+            length = int(line.split(":")[1].strip())
+    return json.loads(sys.stdin.buffer.read(length).decode()) if length else None
+def write_msg(obj):
+    data = json.dumps(obj).encode()
+    sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(data) + data)
+    sys.stdout.buffer.flush()
+while True:
+    msg = read_msg()
+    if msg is None:
+        break
+    method = msg.get("method", "")
+    mid = msg.get("id")
+    if method == "initialize":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": {"capabilities": {}}})
+    elif method == "textDocument/hover":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": {"contents": {"kind": "markdown", "value": "**len** builtin"}}})
+    elif method == "shutdown":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": None})
+    elif method == "exit":
+        break
+`
+
+func lspHandlerFixture(t *testing.T) (*Handler, context.Context) {
+	t.Helper()
+	ctx := context.Background()
+	root := t.TempDir()
+	script := filepath.Join(t.TempDir(), "fake-lsp.py")
+	if err := os.WriteFile(script, []byte(fakeLspPython), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	if err := s.CreateWorkspace(ctx, domain.Workspace{ID: "w", Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "x.py"), []byte("x = len([1])\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(s)
+	h.lsp = NewLSPManager("python3", []string{script})
+	h.lspOwned = true
+	return h, ctx
+}
+
+func lspHover(t *testing.T, h *Handler, ctx context.Context, path string, line, char int) string {
+	t.Helper()
+	raw, err := json.Marshal(protocol.LspHoverRequest{Path: path, Line: line, Character: char})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspHover, WorkspaceID: "w", Payload: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Type != protocol.MessageLspHoverResult || response.WorkspaceID != "w" {
+		t.Fatalf("response = %#v", response)
+	}
+	var result protocol.LspHoverResult
+	if err := json.Unmarshal(response.Payload, &result); err != nil {
+		t.Fatal(err)
+	}
+	return result.Contents
+}
+
+func TestLspHoverEndToEnd(t *testing.T) {
+	h, ctx := lspHandlerFixture(t)
+	contents := lspHover(t, h, ctx, "x.py", 0, 4)
+	if !strings.Contains(contents, "len") {
+		t.Fatalf("contents = %q", contents)
+	}
+}
+
+func TestLspHoverRejectsNonPython(t *testing.T) {
+	h, ctx := lspHandlerFixture(t)
+	raw, _ := json.Marshal(protocol.LspHoverRequest{Path: "x.go", Line: 0, Character: 0})
+	if _, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspHover, WorkspaceID: "w", Payload: raw}); err == nil {
+		t.Fatal("non-python file accepted")
+	}
+}
+
+func TestLspHoverRejectsEscape(t *testing.T) {
+	h, ctx := lspHandlerFixture(t)
+	raw, _ := json.Marshal(protocol.LspHoverRequest{Path: "../evil.py", Line: 0, Character: 0})
+	if _, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspHover, WorkspaceID: "w", Payload: raw}); err == nil {
+		t.Fatal("path escape accepted")
+	}
+}
+
+func TestLspHoverRequiresConfiguredServer(t *testing.T) {
+	h, ctx := lspHandlerFixture(t)
+	h.lsp = nil
+	raw, _ := json.Marshal(protocol.LspHoverRequest{Path: "x.py", Line: 0, Character: 0})
+	if _, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspHover, WorkspaceID: "w", Payload: raw}); err == nil {
+		t.Fatal("unconfigured server accepted")
+	}
+}

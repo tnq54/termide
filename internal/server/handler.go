@@ -20,6 +20,8 @@ type Handler struct {
 	supervisor *Supervisor
 	pty        *PTYRegistry
 	ptyOwned   bool
+	lsp        *LSPManager
+	lspOwned   bool
 	jobsMu     sync.Mutex
 	jobs       sync.WaitGroup
 	cancels    map[string]context.CancelFunc
@@ -45,6 +47,9 @@ func (h *Handler) Close() error {
 	defer h.jobsMu.Unlock()
 	if h.ptyOwned && h.pty != nil {
 		h.pty.CloseAll()
+	}
+	if h.lspOwned && h.lsp != nil {
+		h.lsp.Close()
 	}
 	return errors.Join(h.jobErrors...)
 }
@@ -92,6 +97,8 @@ func (h *Handler) Handle(ctx context.Context, message protocol.Message) (protoco
 		return h.runCommand(ctx, message)
 	case protocol.MessagePtyOpen, protocol.MessagePtyWrite, protocol.MessagePtyRead, protocol.MessagePtyResize, protocol.MessagePtyClose:
 		return h.handlePty(ctx, message)
+	case protocol.MessageLspHover:
+		return h.handleLsp(ctx, message)
 	case protocol.MessageCreateTask:
 		if message.WorkspaceID == "" || message.TaskID == "" {
 			return protocol.Message{}, fmt.Errorf("workspace and task IDs are required")

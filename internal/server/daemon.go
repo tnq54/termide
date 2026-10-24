@@ -13,10 +13,18 @@ import (
 // later daemon recovers them via lease expiry.
 const shutdownGrace = 10 * time.Second
 
+// DaemonOptions carries optional daemon integrations.
+type DaemonOptions struct {
+	// LSPBin/LSPArgs configure the Python language server command.
+	LSPBin  string
+	LSPArgs []string
+}
+
 // RunDaemon recovers expired runs, serves the control socket until ctx ends,
 // then shuts the supervisor down gracefully. The caller owns database locking.
-func RunDaemon(ctx context.Context, s *store.Store, socketPath string, runner agent.Runner, owner string) error {
+func RunDaemon(ctx context.Context, s *store.Store, socketPath string, runner agent.Runner, owner string, opts DaemonOptions) error {
 	supervisor := NewSupervisor(s, runner, owner)
+	supervisor.SetLSP(opts.LSPBin, opts.LSPArgs)
 	if _, err := supervisor.Recover(ctx); err != nil {
 		return err
 	}

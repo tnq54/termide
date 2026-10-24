@@ -20,6 +20,7 @@ func main() {
 	daemon := flag.Bool("daemon", false, "run durable task supervisor")
 	socket := flag.String("socket", "termide.sock", "durable supervisor Unix socket path")
 	opencode := flag.String("opencode", "opencode", "OpenCode executable used for start_task")
+	lspPython := flag.String("lsp-python", "", "Python language server executable for hover (empty disables LSP)")
 	flag.Parse()
 	s, err := store.Open(*database)
 	if err != nil {
@@ -36,7 +37,8 @@ func main() {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		runner := agent.NewOpenCodeRunner(*opencode, nil)
-		if err := server.RunDaemon(ctx, s, *socket, runner, fmt.Sprintf("%d", os.Getpid())); err != nil {
+		opts := server.DaemonOptions{LSPBin: *lspPython}
+		if err := server.RunDaemon(ctx, s, *socket, runner, fmt.Sprintf("%d", os.Getpid()), opts); err != nil {
 			log.Fatal(err)
 		}
 		return

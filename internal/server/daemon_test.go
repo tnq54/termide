@@ -28,7 +28,9 @@ func TestDaemonTaskSurvivesSessionClose(t *testing.T) {
 	daemonCtx, daemonCancel := context.WithCancel(context.Background())
 	defer daemonCancel()
 	daemonDone := make(chan error, 1)
-	go func() { daemonDone <- RunDaemon(daemonCtx, s, socket, &emittingRunner{text: "durable"}, "daemon") }()
+	go func() {
+		daemonDone <- RunDaemon(daemonCtx, s, socket, &emittingRunner{text: "durable"}, "daemon", DaemonOptions{})
+	}()
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		conn, err := DialControl(ctx, socket)
@@ -93,7 +95,7 @@ func TestDaemonShutdownLeavesInflightTaskRunning(t *testing.T) {
 	daemonCtx, daemonCancel := context.WithCancel(context.Background())
 	daemonDone := make(chan error, 1)
 	runner := &durableRunner{started: make(chan struct{}), done: make(chan struct{})}
-	go func() { daemonDone <- RunDaemon(daemonCtx, s, socket, runner, "daemon") }()
+	go func() { daemonDone <- RunDaemon(daemonCtx, s, socket, runner, "daemon", DaemonOptions{}) }()
 	deadline := time.Now().Add(2 * time.Second)
 	var session net.Conn
 	for {
