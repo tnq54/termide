@@ -373,6 +373,71 @@ func (c *Client) SignatureHelp(ctx context.Context, uri string, line, character 
 	return help, nil
 }
 
+// Position is a zero-based line and rune-offset character.
+type Position struct {
+	Line      int
+	Character int
+}
+
+// TextEdit is one replacement in a file, with zero-based rune offsets.
+type TextEdit struct {
+	Start   Position
+	End     Position
+	NewText string
+}
+
+type rawTextEdit struct {
+	Range struct {
+		Start struct {
+			Line      int `json:"line"`
+			Character int `json:"character"`
+		} `json:"start"`
+		End struct {
+			Line      int `json:"line"`
+			Character int `json:"character"`
+		} `json:"end"`
+	} `json:"range"`
+	NewText string `json:"newText"`
+}
+
+// Rename asks the server for a workspace edit renaming the symbol at a
+// zero-based line and rune-offset character. Only the `changes` map form is
+// supported; documentChanges responses are rejected as unsupported.
+func (c *Client) Rename(ctx context.Context, uri string, line, character int, newName string) (map[string][]TextEdit, error) {
+	conn, err := c.connFor()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := conn.Call(ctx, "textDocument/rename", map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+		"position":     map[string]any{"line": line, "character": character},
+		"newName":      newName,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if string(raw) == "null" || len(raw) == 0 {
+		return map[string][]TextEdit{}, nil
+	}
+	var edit struct {
+		Changes map[string][]rawTextEdit `json:"changes"`
+	}
+	if err := json.Unmarshal(raw, &edit); err != nil || edit.Changes == nil {
+		return nil, fmt.Errorf("decode rename: unsupported workspace edit")
+	}
+	changes := make(map[string][]TextEdit, len(edit.Changes))
+	for fileURI, rawEdits := range edit.Changes {
+		for _, rawEdit := range rawEdits {
+			changes[fileURI] = append(changes[fileURI], TextEdit{
+				Start:   Position{Line: rawEdit.Range.Start.Line, Character: rawEdit.Range.Start.Character},
+				End:     Position{Line: rawEdit.Range.End.Line, Character: rawEdit.Range.End.Character},
+				NewText: rawEdit.NewText,
+			})
+		}
+	}
+	return changes, nil
+}
+
 // Close shuts the server down gracefully, then kills leftovers.
 func (c *Client) Close() error {
 	c.mu.Lock()
