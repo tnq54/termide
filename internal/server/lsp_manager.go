@@ -21,10 +21,80 @@ type LSPManager struct {
 	servers map[string]*lsp.Client
 	binary  string
 	args    []string
+	actions map[string]*cachedAction
+	nonce   uint64
+}
+
+type cachedAction struct {
+	workspaceID string
+	root        string
+	edits       map[string][]lsp.TextEdit
+	created     time.Time
 }
 
 func NewLSPManager(binary string, args []string) *LSPManager {
-	return &LSPManager{servers: make(map[string]*lsp.Client), binary: binary, args: append([]string(nil), args...)}
+	return &LSPManager{servers: make(map[string]*lsp.Client), binary: binary, args: append([]string(nil), args...), actions: make(map[string]*cachedAction)}
+}
+
+// CodeAction lists applicable fixes/refactors for a line range. Only actions
+// carrying edits are returned; command-only actions cannot be applied
+// headlessly and are dropped. Each listed action gets a single-use ID.
+func (m *LSPManager) CodeAction(ctx context.Context, workspaceID, root, rel string, startLine, startChar, endLine, endChar int) ([]protocol.LspCodeActionItem, error) {
+	if workspaceID == "" || root == "" {
+		return nil, fmt.Errorf("workspace identity is required")
+	}
+	if !strings.HasSuffix(strings.ToLower(rel), ".py") {
+		return nil, fmt.Errorf("no language server for this file type")
+	}
+	if startLine < 0 || startChar < 0 || endLine < startLine {
+		return nil, fmt.Errorf("line range is invalid")
+	}
+	clean, err := checkPathInsideRoot(root, rel)
+	if err != nil {
+		return nil, err
+	}
+	text, err := os.ReadFile(clean)
+	if err != nil {
+		return nil, err
+	}
+	client, err := m.serverFor(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	uri := "file://" + clean
+	if err := client.DidOpen(ctx, uri, "python", string(text)); err != nil {
+		return nil, err
+	}
+	actions, err := client.CodeAction(ctx, uri, startLine, startChar, endLine, endChar, client.Diagnostics(uri))
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now()
+	for id, cached := range m.actions {
+		if now.Sub(cached.created) > 5*time.Minute {
+			delete(m.actions, id)
+		}
+	}
+	if len(m.actions) >= 32 {
+		m.actions = make(map[string]*cachedAction)
+	}
+	m.nonce++
+	items := make([]protocol.LspCodeActionItem, 0, len(actions))
+	for i, action := range actions {
+		if len(action.Edits) == 0 {
+			continue
+		}
+		id := fmt.Sprintf("act-%d-%d", m.nonce, i)
+		edits := make(map[string][]lsp.TextEdit, len(action.Edits))
+		for uri, e := range action.Edits {
+			edits[uri] = append([]lsp.TextEdit(nil), e...)
+		}
+		items = append(items, protocol.LspCodeActionItem{ID: id, Title: action.Title, Kind: action.Kind})
+		m.actions[id] = &cachedAction{workspaceID: workspaceID, root: root, edits: edits, created: now}
+	}
+	return items, nil
 }
 
 func (m *LSPManager) serverFor(ctx context.Context, root string) (*lsp.Client, error) {
@@ -243,6 +313,12 @@ func (m *LSPManager) Rename(ctx context.Context, workspaceID, root, rel string, 
 	if err != nil {
 		return nil, err
 	}
+	return applyChanges(root, changes)
+}
+
+// applyChanges validates every edit, then writes all files. Nothing is
+// written unless every file validates, so a bad edit cannot half-apply.
+func applyChanges(root string, changes map[string][]lsp.TextEdit) ([]protocol.LspRenameFile, error) {
 	type pendingFile struct {
 		path string
 		text string
@@ -272,6 +348,24 @@ func (m *LSPManager) Rename(ctx context.Context, workspaceID, root, rel string, 
 	}
 	sortRenameFiles(files)
 	return files, nil
+}
+
+// ApplyCodeAction applies a previously listed action and consumes its nonce.
+// Unknown or reused IDs are rejected.
+func (m *LSPManager) ApplyCodeAction(workspaceID, id string) ([]protocol.LspRenameFile, error) {
+	m.mu.Lock()
+	cached, ok := m.actions[id]
+	if ok {
+		delete(m.actions, id)
+	}
+	m.mu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("unknown or expired code action")
+	}
+	if cached.workspaceID != workspaceID {
+		return nil, fmt.Errorf("code action belongs to another workspace")
+	}
+	return applyChanges(cached.root, cached.edits)
 }
 
 func isIdentifier(name string) bool {

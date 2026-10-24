@@ -87,6 +87,35 @@ func (h *Handler) handleLsp(ctx context.Context, message protocol.Message) (prot
 			return protocol.Message{}, err
 		}
 		return protocol.Message{Type: protocol.MessageLspRenameResult, WorkspaceID: message.WorkspaceID, TaskID: message.TaskID, Payload: payload}, nil
+	case protocol.MessageLspCodeAction:
+		var request protocol.LspCodeActionRequest
+		if err := json.Unmarshal(message.Payload, &request); err != nil {
+			return protocol.Message{}, fmt.Errorf("invalid lsp request: %w", err)
+		}
+		items, err := h.lsp.CodeAction(ctx, message.WorkspaceID, workspace.Root, request.Path, request.StartLine, request.StartChar, request.EndLine, request.EndChar)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		payload, err := json.Marshal(protocol.LspCodeActionList{Actions: items})
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		return protocol.Message{Type: protocol.MessageLspCodeActionList, WorkspaceID: message.WorkspaceID, TaskID: message.TaskID, Payload: payload}, nil
+	case protocol.MessageLspCodeActionApply:
+		var request protocol.LspCodeActionApplyRequest
+		if err := json.Unmarshal(message.Payload, &request); err != nil {
+			return protocol.Message{}, fmt.Errorf("invalid lsp request: %w", err)
+		}
+		files, err := h.lsp.ApplyCodeAction(message.WorkspaceID, request.ID)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		payload, err := json.Marshal(protocol.LspRenameResult{Files: files})
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		// Apply responses share LspRenameResult: per-file applied edit counts.
+		return protocol.Message{Type: protocol.MessageLspCodeActionApplied, WorkspaceID: message.WorkspaceID, TaskID: message.TaskID, Payload: payload}, nil
 	default:
 		return protocol.Message{}, fmt.Errorf("unsupported message type %q", message.Type)
 	}

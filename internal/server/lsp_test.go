@@ -391,6 +391,161 @@ func TestApplyTextEdits(t *testing.T) {
 	}
 }
 
+const fakeLspCodeAction = `import json,sys
+def read_msg():
+    length = 0
+    while True:
+        line = sys.stdin.buffer.readline().decode()
+        if not line or line in ("\r\n", "\n"):
+            break
+        if line.lower().startswith("content-length:"):
+            length = int(line.split(":")[1].strip())
+    return json.loads(sys.stdin.buffer.read(length).decode()) if length else None
+def write_msg(obj):
+    data = json.dumps(obj).encode()
+    sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(data) + data)
+    sys.stdout.buffer.flush()
+while True:
+    msg = read_msg()
+    if msg is None:
+        break
+    method = msg.get("method", "")
+    mid = msg.get("id")
+    if method == "initialize":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": {"capabilities": {}}})
+    elif method == "textDocument/codeAction":
+        uri = msg["params"]["textDocument"]["uri"]
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": [{"title": "Add missing import", "kind": "quickfix", "edit": {"changes": {uri: [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}}, "newText": "import os\n"}]}}}, {"title": "Run fixer", "kind": "quickfix", "command": {"title": "run", "command": "fix"}}]})
+    elif method == "shutdown":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": None})
+    elif method == "exit":
+        break
+`
+
+func TestLspCodeActionListAndApply(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	script := filepath.Join(t.TempDir(), "fake-lsp.py")
+	if err := os.WriteFile(script, []byte(fakeLspCodeAction), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateWorkspace(ctx, domain.Workspace{ID: "w", Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "x.py"), []byte("x = 1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(s)
+	defer h.Close()
+	h.lsp = NewLSPManager("python3", []string{script})
+	h.lspOwned = true
+	raw, _ := json.Marshal(protocol.LspCodeActionRequest{Path: "x.py", StartLine: 0, StartChar: 4, EndLine: 0, EndChar: 4})
+	response, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspCodeAction, WorkspaceID: "w", Payload: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Type != protocol.MessageLspCodeActionList {
+		t.Fatalf("response = %#v", response)
+	}
+	var list protocol.LspCodeActionList
+	if err := json.Unmarshal(response.Payload, &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Actions) != 1 || list.Actions[0].Title != "Add missing import" {
+		t.Fatalf("list = %#v", list)
+	}
+	applyRaw, _ := json.Marshal(protocol.LspCodeActionApplyRequest{ID: list.Actions[0].ID})
+	applied, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspCodeActionApply, WorkspaceID: "w", Payload: applyRaw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.Type != protocol.MessageLspCodeActionApplied {
+		t.Fatalf("applied = %#v", applied)
+	}
+	var result protocol.LspRenameResult
+	if err := json.Unmarshal(applied.Payload, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Files) != 1 || result.Files[0].Path != "x.py" {
+		t.Fatalf("result = %#v", result)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "x.py"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "import os\nx = 1\n" {
+		t.Fatalf("file = %q", data)
+	}
+	if _, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspCodeActionApply, WorkspaceID: "w", Payload: applyRaw}); err == nil {
+		t.Fatal("reused nonce accepted")
+	}
+}
+
+func TestLspCodeActionApplyRejectsForeignWorkspace(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	script := filepath.Join(t.TempDir(), "fake-lsp.py")
+	if err := os.WriteFile(script, []byte(fakeLspCodeAction), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateWorkspace(ctx, domain.Workspace{ID: "w", Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	other := t.TempDir()
+	if err := s.CreateWorkspace(ctx, domain.Workspace{ID: "other", Root: other}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "x.py"), []byte("x = 1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(s)
+	defer h.Close()
+	h.lsp = NewLSPManager("python3", []string{script})
+	h.lspOwned = true
+	raw, _ := json.Marshal(protocol.LspCodeActionRequest{Path: "x.py", StartLine: 0, StartChar: 0, EndLine: 0, EndChar: 1})
+	response, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspCodeAction, WorkspaceID: "w", Payload: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list protocol.LspCodeActionList
+	if err := json.Unmarshal(response.Payload, &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Actions) != 1 {
+		t.Fatalf("list = %#v", list)
+	}
+	applyRaw, _ := json.Marshal(protocol.LspCodeActionApplyRequest{ID: list.Actions[0].ID})
+	if _, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspCodeActionApply, WorkspaceID: "other", Payload: applyRaw}); err == nil {
+		t.Fatal("cross-workspace apply accepted")
+	}
+}
+
+func TestLspCodeActionRejectsNonPython(t *testing.T) {
+	h, ctx := lspHandlerFixture(t)
+	raw, _ := json.Marshal(protocol.LspCodeActionRequest{Path: "x.go", StartLine: 0, StartChar: 0, EndLine: 0, EndChar: 0})
+	if _, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspCodeAction, WorkspaceID: "w", Payload: raw}); err == nil {
+		t.Fatal("non-python file accepted")
+	}
+}
+
+func TestLspCodeActionApplyRejectsUnknownID(t *testing.T) {
+	h, ctx := lspHandlerFixture(t)
+	raw, _ := json.Marshal(protocol.LspCodeActionApplyRequest{ID: "act-999-0"})
+	if _, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspCodeActionApply, WorkspaceID: "w", Payload: raw}); err == nil {
+		t.Fatal("unknown action ID accepted")
+	}
+}
+
 const fakeLspPublishing = `import json,sys
 def read_msg():
     length = 0
