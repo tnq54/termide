@@ -29,3 +29,13 @@ Verified: `go test ./...`, `go test -race` (lsp/server/client), `go vet`,
 dashboard open/exit, PTY resize, Unicode), Playwright terminal spec
 (offline demo + SSH form/UTF-8/Ctrl), fresh `assembleDebug`, `aapt dump
 badging`, `apksigner verify`, Linux amd64 `termide`/`termide-server` builds.
+
+## Supervisor self-bootstrap
+
+- [x] RED→GREEN: `EnsureSupervisor` dials the socket, spawns via injected
+  `start` only when nothing listens, returns start errors unwrapped,
+  times out when no listener appears, reuses a running daemon.
+- [x] RED→GREEN e2e through the real binary: `--stdio` with no daemon
+  spawns it (detached, logs to `termide.sock.log`) and serves
+  `open_workspace` → `workspace_ready` over the framed transport.
+- [x] Full suite, race, vet, windows/android cross-builds passed.

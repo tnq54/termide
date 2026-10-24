@@ -45,11 +45,12 @@ $ANDROID_HOME/build-tools/34.0.0/apksigner verify --print-certs app-debug.apk
 ## Cài và dùng để test
 
 1. VPS: chép `termide-linux-amd64` → `~/bin/termide`,
-   `termide-server-linux-amd64` → `~/bin/termide-server`, `chmod +x` cả hai;
-   thêm `~/bin` vào `PATH` của SSH non-interactive (APK chạy
-   `export PATH="$HOME/.local/bin:$PATH"` trước, nên để binary ở một trong
-   hai chỗ). Khởi động supervisor cho project:
-   `termide-server --daemon --socket ~/termide.sock` trong thư mục project
+   `termide-server-linux-amd64` → `~/bin/termide-server`, `chmod +x` cả hai
+   (APK chạy `export PATH="$HOME/bin:$HOME/.local/bin:$PATH"` trước, nên để
+   binary ở một trong hai chỗ). Lần kết nối đầu, `termide-server --stdio`
+   tự khởi động supervisor daemon cho project nếu chưa chạy (log ở
+   `termide.sock.log` cạnh socket) — không cần chạy `--daemon` tay.
+   Muốn chạy tay vẫn được: `termide-server --daemon` trong thư mục project
    (mỗi project một socket/daemon).
 2. Điện thoại: `adb install -r app-debug.apk`, mở app TermIDE.
 3. Nhập Host/IP, Port, User; nhập mật khẩu hoặc Chọn SSH key (+ passphrase).

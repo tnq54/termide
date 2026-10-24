@@ -44,7 +44,7 @@ func main() {
 		return
 	}
 	if *stdio {
-		control, err := server.DialControl(context.Background(), *socket)
+		control, err := server.EnsureDaemon(context.Background(), *socket, *database, *opencode, *lspPython)
 		if err != nil {
 			log.Fatalf("connect durable supervisor: %v", err)
 		}
