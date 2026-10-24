@@ -78,6 +78,12 @@ event mới hoặc hết thời gian chờ: server giữ request tối đa 30 gi
 mỗi 100ms và tôn trọng cancel. Hết chờ trả về replay rỗng, không phải lỗi.
 Caller giữ quyền chủ động gọi — không có background polling ngầm cạnh tranh
 với editor trên link SSH chậm.
+
+Khi task detail mở và task chưa ở trạng thái cuối, dashboard tự long-poll
+mỗi chu kỳ 10 giây qua `SubscribeWait` và bổ sung log mới mà không khóa phím
+(`busy` không bật khi chờ). Hết chờ rỗng thì chờ tiếp; gặp lỗi thì dừng vòng
+để user `r` thủ công. Lệnh thủ công (`r`/`c`/`s`/`a`/`d`) xếp hàng sau một
+chu kỳ chờ đang bay trên cùng transport, tối đa 10 giây.
 Client kiểm tra response type, workspace identity, event identity, sequence tăng
 nghiêm ngặt và giới hạn 10.000 event / 2 MiB; server áp dụng cùng giới hạn trước
 khi serialize. Đây là reconnect/replay một lần, chưa phải live push.

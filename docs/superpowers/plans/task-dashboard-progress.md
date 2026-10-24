@@ -42,6 +42,17 @@ the process-tree limitation documented above still applies.
 - [x] No background polling: the caller decides when to wait; full suite,
   race, vet and cross-builds passed.
 
+## Dashboard live-wait loop
+
+- [x] RED→GREEN: snapshot load schedules a 10s wait for non-terminal tasks
+  without setting busy; new events append logs, advance the cursor and
+  continue; errors and terminal tasks stop the loop.
+- [x] RED→GREEN: stale/out-of-order wait results only apply events newer
+  than the cursor; keys keep working while waiting.
+- [x] RED→GREEN: end-to-end over real transport wakes on a late event.
+- [x] Documented worst case: manual commands queue up to 10s behind an
+  in-flight wait on the serial transport.
+
 ## Durable approval gate
 
 - [x] RED→GREEN: approvals persist in SQLite; resolve is single-winner,

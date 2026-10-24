@@ -22,6 +22,7 @@ type dashboardState struct {
 	logs         []string
 	busy         bool
 	loadingMore  bool
+	waiting      bool
 	detailOffset int
 }
 
@@ -222,6 +223,10 @@ func (m Model) receiveDashboard(result dashboardResult) (tea.Model, tea.Cmd) {
 		}
 		m.dashboard.logs = append(m.dashboard.logs, snapshotLogLines(result.snapshot.Events)...)
 		m.Status = "task detail loaded"
+		if cmd := m.waitCommand(); cmd != nil {
+			m.dashboard.waiting = true
+			return m, cmd
+		}
 	}
 	return m, nil
 }

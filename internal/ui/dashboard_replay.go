@@ -59,5 +59,9 @@ func (m Model) receiveDashboardReplay(result dashboardReplayResult) (tea.Model, 
 	m.dashboard.snapshot.NextSequence = previous
 	m.dashboard.logs = append(m.dashboard.logs, snapshotLogLines(result.events)...)
 	m.Status = "task history replayed"
+	if cmd := m.waitCommand(); cmd != nil {
+		m.dashboard.waiting = true
+		return m, cmd
+	}
 	return m, nil
 }

@@ -46,6 +46,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.receiveFile(value)
 	case dashboardResult:
 		return m.receiveDashboard(value)
+	case dashboardWaitResult:
+		return m.receiveDashboardWait(value)
 	case dashboardReplayResult:
 		return m.receiveDashboardReplay(value)
 	case remoteResult:
