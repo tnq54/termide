@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,9 +50,16 @@ func (s *Supervisor) Start(ctx context.Context, workspaceID, taskID string, spec
 	if task.WorkspaceID != workspaceID {
 		return store.TaskRun{}, fmt.Errorf("task does not belong to workspace")
 	}
+	seen := make(map[string]bool, len(specs))
 	for i := range specs {
-		if specs[i].ID == "" {
-			return store.TaskRun{}, fmt.Errorf("agent ID is required")
+		if specs[i].ID == "" || seen[specs[i].ID] {
+			return store.TaskRun{}, fmt.Errorf("agent IDs must be nonempty and unique")
+		}
+		seen[specs[i].ID] = true
+		if owner, err := s.store.AgentTask(ctx, specs[i].ID); err == nil && owner != taskID {
+			return store.TaskRun{}, fmt.Errorf("agent ID %q already belongs to another task", specs[i].ID)
+		} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return store.TaskRun{}, err
 		}
 		if specs[i].Command == "" {
 			specs[i].Command = task.Description
@@ -68,6 +76,7 @@ func (s *Supervisor) Start(ctx context.Context, workspaceID, taskID string, spec
 	for _, spec := range specs {
 		if err := s.store.UpsertAgent(ctx, domain.Agent{ID: spec.ID, TaskID: taskID, Role: spec.Role, Status: domain.AgentQueued}); err != nil {
 			finalCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = s.store.CancelQueuedAgents(finalCtx, taskID)
 			_ = s.store.UpdateTaskStatus(finalCtx, taskID, domain.TaskFailed)
 			_ = s.store.FinishTaskRun(finalCtx, run.RunID, domain.TaskFailed, err.Error())
 			cancel()
@@ -225,6 +234,20 @@ func (s *Supervisor) Close(ctx context.Context) error {
 	for _, cancel := range s.jobs {
 		cancel()
 	}
+	s.mu.Unlock()
+	waitErr := s.Wait(ctx)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return errors.Join(waitErr, errors.Join(s.errs...))
+}
+
+// Shutdown stops the supervisor without cancelling in-flight runs: new starts
+// are rejected, the caller waits up to the context deadline, and unfinished
+// runs keep their leases so a later daemon recovers them. Never use Close for
+// planned daemon restarts: Close cancels every job and persists cancellation.
+func (s *Supervisor) Shutdown(ctx context.Context) error {
+	s.mu.Lock()
+	s.closed = true
 	s.mu.Unlock()
 	waitErr := s.Wait(ctx)
 	s.mu.Lock()

@@ -137,8 +137,8 @@ func TestRecoverExpiredRunsRequeuesTaskOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != domain.TaskQueued {
-		t.Fatal(task)
+	if task.Status != domain.TaskRunning {
+		t.Fatalf("recovery must keep the task running, got %#v", task)
 	}
 	again, err := s.RecoverExpiredRuns(ctx, "new", time.Now())
 	if err != nil {

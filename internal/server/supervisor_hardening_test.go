@@ -84,6 +84,42 @@ func TestSupervisorPersistsOutputEvents(t *testing.T) {
 	}
 }
 
+func TestSupervisorStartRejectsDuplicateAndForeignAgentIDs(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(t.TempDir() + "/state.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	mustWorkspaceTask(t, s, "w", "t1", "")
+	if err := s.CreateTask(ctx, domain.Task{ID: "t2", WorkspaceID: "w", Description: "task", Status: domain.TaskQueued}); err != nil {
+		t.Fatal(err)
+	}
+	sup := NewSupervisor(s, &emittingRunner{text: "x"}, "owner")
+	if _, err := sup.Start(ctx, "w", "t1", []agent.Spec{{ID: "a", Role: "coder"}, {ID: "a", Role: "tester"}}); err == nil {
+		t.Fatal("duplicate agent IDs accepted")
+	}
+	if _, err := s.GetTaskRun(ctx, "t1"); err == nil {
+		t.Fatal("failed start left a run record")
+	}
+	if _, err := sup.Start(ctx, "w", "t1", []agent.Spec{{ID: "shared", Role: "coder"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sup.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sup.Start(ctx, "w", "t2", []agent.Spec{{ID: "shared", Role: "coder"}}); err == nil {
+		t.Fatal("agent ID owned by another task accepted")
+	}
+	task, err := s.GetTask(ctx, "t2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != domain.TaskQueued {
+		t.Fatalf("rejected start mutated task: %#v", task)
+	}
+}
+
 func TestSupervisorRecoversExpiredRun(t *testing.T) {
 	ctx := context.Background()
 	s, err := store.Open(t.TempDir() + "/state.db")
@@ -105,6 +141,11 @@ func TestSupervisorRecoversExpiredRun(t *testing.T) {
 	}
 	if err := s.RenewRunLease(ctx, run.RunID, "old-owner", time.Now().Add(-time.Minute)); err != nil {
 		t.Fatal(err)
+	}
+	// While the expired run is unrecovered, a concurrent Start must be rejected:
+	// the task never returns to queued.
+	if _, err := NewSupervisor(s, &emittingRunner{text: "x"}, "racing").Start(ctx, "w", "t", []agent.Spec{{ID: "b", Role: "coder"}}); err == nil {
+		t.Fatal("start during expired lease accepted")
 	}
 	next := NewSupervisor(s, &emittingRunner{text: "recovered"}, "new-owner")
 	recovered, err := next.Recover(ctx)

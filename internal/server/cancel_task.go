@@ -7,14 +7,14 @@ import (
 )
 
 func (h *Handler) cancelTask(ctx context.Context, message protocol.Message) (protocol.Message, error) {
+	if message.WorkspaceID == "" || message.TaskID == "" {
+		return protocol.Message{}, fmt.Errorf("workspace and task IDs are required")
+	}
 	if h.supervisor != nil {
 		if err := h.supervisor.Cancel(ctx, message.WorkspaceID, message.TaskID); err != nil {
 			return protocol.Message{}, err
 		}
 		return protocol.Message{Type: protocol.MessageTaskCancelRequested, WorkspaceID: message.WorkspaceID, TaskID: message.TaskID}, nil
-	}
-	if message.WorkspaceID == "" || message.TaskID == "" {
-		return protocol.Message{}, fmt.Errorf("workspace and task IDs are required")
 	}
 	task, err := h.store.GetTask(ctx, message.TaskID)
 	if err != nil {

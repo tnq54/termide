@@ -109,9 +109,9 @@ func (s *Store) RecoverExpiredRuns(ctx context.Context, owner string, now time.T
 			return nil, err
 		}
 		if n == 1 {
-			if _, err := s.db.ExecContext(ctx, `UPDATE tasks SET status=? WHERE id=? AND status=?`, domain.TaskQueued, runs[i].TaskID, domain.TaskRunning); err != nil {
-				return nil, err
-			}
+			// The task stays running: ownership of the active run moves to
+			// the recovering supervisor, so a concurrent Start can never
+			// claim the task while it is being relaunched.
 			runs[i].Owner = owner
 			runs[i].LeaseUntil = now.Add(time.Minute)
 			runs[i].Attempt++
@@ -139,6 +139,13 @@ func (s *Store) RenewRunLease(ctx context.Context, runID, owner string, leaseUnt
 		return fmt.Errorf("task run lease is not owned")
 	}
 	return nil
+}
+
+// AgentTask returns the task that owns an agent ID, or sql.ErrNoRows.
+func (s *Store) AgentTask(ctx context.Context, id string) (string, error) {
+	var taskID string
+	err := s.db.QueryRowContext(ctx, `SELECT task_id FROM agents WHERE id=?`, id).Scan(&taskID)
+	return taskID, err
 }
 
 func (s *Store) FinishTaskRun(ctx context.Context, runID string, status domain.TaskStatus, errText string) error {

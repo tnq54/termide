@@ -92,5 +92,15 @@ daemon; đóng stdio/SSH không cancel task đang chạy.
   của run; terminal state (`completed`/`failed`/`cancelled`) được persist
   ngay cả khi không còn client nào kết nối.
 - Chỉ một daemon được giữ một database (file lock); daemon thứ hai bị từ chối.
+  Lock là guard chống split-brain: lease/fencing không thay thế lock, và renew
+  thất bại được coi là best-effort.
+- Shutdown daemon có kế hoạch (SIGTERM/SIGINT) không cancel task đang chạy:
+  daemon ngừng nhận việc mới, chờ tối đa 10 giây, task chưa xong giữ lease
+  để daemon tiếp theo recover. Chỉ `Close` sau mất kết nối đột ngột mới dẫn
+  tới cancel.
+- Agent ID phải duy nhất trong plan và không thuộc task khác; start vi phạm
+  bị từ chối mà không để lại execution record.
+- Chế độ `--stdio` yêu cầu daemon đang chạy và kết nối qua `--socket`;
+  không còn handler session-scoped chạy job trong stdio process.
 - Sau reconnect, dashboard dùng snapshot + replay event sau cursor để khôi
   phục log mà không tự bịa trạng thái task.

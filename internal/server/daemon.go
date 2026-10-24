@@ -2,10 +2,16 @@ package server
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"termide/internal/agent"
 	"termide/internal/store"
 )
+
+// shutdownGrace bounds daemon shutdown: in-flight runs are left alone so a
+// later daemon recovers them via lease expiry.
+const shutdownGrace = 10 * time.Second
 
 // RunDaemon recovers expired runs, serves the control socket until ctx ends,
 // then shuts the supervisor down gracefully. The caller owns database locking.
@@ -24,9 +30,13 @@ func RunDaemon(ctx context.Context, s *store.Store, socketPath string, runner ag
 	case <-ctx.Done():
 		_ = listener.Close()
 		<-serveErr
-		return supervisor.Close(context.Background())
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+		defer cancel()
+		return supervisor.Shutdown(shutdownCtx)
 	case err := <-serveErr:
 		_ = listener.Close()
-		return err
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+		defer cancel()
+		return errors.Join(err, supervisor.Shutdown(shutdownCtx))
 	}
 }

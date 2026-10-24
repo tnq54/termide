@@ -46,7 +46,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("connect durable supervisor: %v", err)
 		}
-		if err := server.RunStdioBridge(context.Background(), os.Stdin, control); err != nil {
+		if err := server.RunStdioBridge(context.Background(), server.Stdio(os.Stdin, os.Stdout), control); err != nil {
 			log.Fatal(err)
 		}
 		return
