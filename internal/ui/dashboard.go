@@ -87,6 +87,12 @@ func (m Model) dashboardCommand(kind protocol.MessageType, taskID string, before
 			if response.Type != protocol.MessageTaskCancelRequested || response.TaskID != taskID {
 				result.err = fmt.Errorf("unexpected task cancel response")
 			}
+		} else if kind == protocol.MessageApprove {
+			if response.Type != protocol.MessageEvent || response.TaskID != taskID || response.Event == nil || response.Event.TaskID != taskID || response.Event.WorkspaceID != m.workspace.ID || response.Event.Type != domain.EventApproval {
+				result.err = fmt.Errorf("unexpected task approve response")
+			} else {
+				result.err = response.Event.Validate()
+			}
 		} else if kind == protocol.MessageStartTask {
 			if response.Type != protocol.MessageEvent || response.TaskID != taskID || response.Event == nil || response.Event.TaskID != taskID || response.Event.WorkspaceID != m.workspace.ID || response.Event.Type != domain.EventTaskUpdated {
 				result.err = fmt.Errorf("unexpected task start response")
@@ -107,6 +113,40 @@ func (m Model) dashboardCommand(kind protocol.MessageType, taskID string, before
 	}
 }
 
+func (m Model) dashboardApproveCommand(approved bool) tea.Cmd {
+	return func() tea.Msg {
+		if m.dashboard.snapshot == nil || len(m.dashboard.snapshot.Approvals) == 0 {
+			return dashboardResult{kind: protocol.MessageApprove, err: fmt.Errorf("no pending approval")}
+		}
+		approval := m.dashboard.snapshot.Approvals[0]
+		payload, err := json.Marshal(protocol.ApproveDecision{ID: approval.ID, Approved: approved})
+		if err != nil {
+			return dashboardResult{kind: protocol.MessageApprove, err: err}
+		}
+		timeout := 15 * time.Second
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		response, err := m.remote.Call(ctx, protocol.Message{
+			Type: protocol.MessageApprove, WorkspaceID: m.workspace.ID,
+			TaskID: m.dashboard.snapshot.Task.ID, Payload: payload,
+		})
+		if err != nil {
+			return dashboardResult{kind: protocol.MessageApprove, err: err}
+		}
+		result := dashboardResult{kind: protocol.MessageApprove}
+		if response.WorkspaceID != m.workspace.ID {
+			result.err = fmt.Errorf("dashboard workspace mismatch")
+			return result
+		}
+		if response.Type != protocol.MessageEvent || response.TaskID != m.dashboard.snapshot.Task.ID || response.Event == nil || response.Event.TaskID != m.dashboard.snapshot.Task.ID || response.Event.WorkspaceID != m.workspace.ID || response.Event.Type != domain.EventApproval {
+			result.err = fmt.Errorf("unexpected task approve response")
+		} else {
+			result.err = response.Event.Validate()
+		}
+		return result
+	}
+}
+
 func validateDashboardSnapshot(s domain.TaskSnapshot, workspaceID, taskID string, after uint64) error {
 	if s.Task.ID != taskID || s.Task.WorkspaceID != workspaceID {
 		return fmt.Errorf("snapshot task identity mismatch")
@@ -114,6 +154,14 @@ func validateDashboardSnapshot(s domain.TaskSnapshot, workspaceID, taskID string
 	for _, a := range s.Agents {
 		if a.ID == "" || a.TaskID != taskID {
 			return fmt.Errorf("snapshot agent identity mismatch")
+		}
+	}
+	for _, approval := range s.Approvals {
+		if approval.ID == "" || approval.TaskID != taskID || approval.Status != domain.ApprovalPending {
+			return fmt.Errorf("snapshot approval identity mismatch")
+		}
+		if err := approval.Validate(); err != nil {
+			return err
 		}
 	}
 	sequence := after
@@ -140,10 +188,13 @@ func (m Model) receiveDashboard(result dashboardResult) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch result.kind {
-	case protocol.MessageStartTask, protocol.MessageCancel:
+	case protocol.MessageStartTask, protocol.MessageCancel, protocol.MessageApprove:
 		m.Status = "loading task result"
 		if result.kind == protocol.MessageCancel {
 			m.Status = "cancellation requested; loading task status"
+		}
+		if result.kind == protocol.MessageApprove {
+			m.Status = "decision sent; loading task status"
 		}
 		if m.dashboard.snapshot != nil {
 			m.dashboard.busy = true
@@ -224,6 +275,16 @@ func (m Model) dashboardKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Status = "task history loaded"
 			return m, nil
 		case tea.KeyRunes:
+			if string(key.Runes) == "a" && len(m.dashboard.snapshot.Approvals) > 0 {
+				m.dashboard.busy = true
+				m.Status = "approving command"
+				return m, m.dashboardApproveCommand(true)
+			}
+			if string(key.Runes) == "d" && len(m.dashboard.snapshot.Approvals) > 0 {
+				m.dashboard.busy = true
+				m.Status = "denying command"
+				return m, m.dashboardApproveCommand(false)
+			}
 			if string(key.Runes) == "c" && cancellableTask(m.dashboard.snapshot.Task.Status) {
 				m.dashboard.busy = true
 				m.Status = "requesting task cancellation"
@@ -313,11 +374,20 @@ func (m Model) dashboardView() string {
 		for _, agent := range s.Agents {
 			body = append(body, "- "+safeLabel(agent.Role)+" / "+safeLabel(string(agent.Status)))
 		}
+		if len(s.Approvals) > 0 {
+			body = append(body, "Approvals:")
+			for _, approval := range s.Approvals {
+				body = append(body, "! "+safeLabel(approval.ID)+" "+safeLabel(approval.AgentID)+": "+safeLabel(approval.Command))
+			}
+		}
 		body = append(body, "Logs:")
 		body = append(body, m.dashboard.logs...)
 		start := min(m.dashboard.detailOffset, max(0, len(body)-m.dashboardRows()))
 		body = body[start:min(len(body), start+m.dashboardRows())]
 		help = "c cancel | r refresh | Esc back"
+		if len(s.Approvals) > 0 {
+			help = "a approve | d deny | c cancel | r refresh | Esc back"
+		}
 	} else {
 		if len(m.dashboard.tasks) == 0 {
 			body = append(body, "(no tasks)")
@@ -368,5 +438,9 @@ func (m Model) detailMaxOffset() int {
 	if m.dashboard.snapshot == nil {
 		return 0
 	}
-	return max(0, 4+len(m.dashboard.snapshot.Agents)+len(m.dashboard.logs)-m.dashboardRows())
+	extra := 0
+	if len(m.dashboard.snapshot.Approvals) > 0 {
+		extra = 1 + len(m.dashboard.snapshot.Approvals)
+	}
+	return max(0, 4+len(m.dashboard.snapshot.Agents)+extra+len(m.dashboard.logs)-m.dashboardRows())
 }

@@ -6,9 +6,10 @@ type TaskPage struct {
 }
 
 type TaskSnapshot struct {
-	Task         Task            `json:"task"`
-	Agents       []Agent         `json:"agents"`
-	Events       []EventEnvelope `json:"events"`
-	NextSequence uint64          `json:"next_sequence"`
-	More         bool            `json:"more"`
+	Task         Task              `json:"task"`
+	Agents       []Agent           `json:"agents"`
+	Events       []EventEnvelope   `json:"events"`
+	Approvals    []ApprovalRequest `json:"approvals"`
+	NextSequence uint64            `json:"next_sequence"`
+	More         bool              `json:"more"`
 }

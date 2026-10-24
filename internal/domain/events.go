@@ -57,3 +57,10 @@ type ApprovalRequest struct {
 	WorkingDir string         `json:"working_dir"`
 	Status     ApprovalStatus `json:"status"`
 }
+
+func (r ApprovalRequest) Validate() error {
+	if r.ID == "" || r.TaskID == "" || r.AgentID == "" || r.Command == "" {
+		return fmt.Errorf("approval identity and command are required")
+	}
+	return nil
+}
