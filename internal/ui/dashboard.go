@@ -251,7 +251,7 @@ func snapshotLogLines(events []domain.EventEnvelope) []string {
 }
 
 func (m Model) dashboardKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	needsRemote := key.String() == "r" || key.String() == "l" || key.String() == "s" || key.String() == "c" || key.Type == tea.KeyEnter
+	needsRemote := key.String() == "r" || key.String() == "l" || key.String() == "s" || key.String() == "c" || key.String() == "f" || key.Type == tea.KeyEnter
 	if needsRemote && (m.remote == nil || !m.ready) {
 		m.Status = "remote workspace is not connected"
 		return m, nil
@@ -280,6 +280,11 @@ func (m Model) dashboardKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Status = "task history loaded"
 			return m, nil
 		case tea.KeyRunes:
+			if string(key.Runes) == "f" {
+				m.diff.busy = true
+				m.Status = "loading task diff"
+				return m, m.diffCommand(m.dashboard.snapshot.Task.ID)
+			}
 			if string(key.Runes) == "a" && len(m.dashboard.snapshot.Approvals) > 0 {
 				m.dashboard.busy = true
 				m.Status = "approving command"
@@ -350,6 +355,13 @@ func (m Model) dashboardKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.files.busy = true
 				return m, m.fileCommand(protocol.MessageListFiles, protocol.FileRequest{Path: m.files.folder})
 			}
+		case "f":
+			if len(m.dashboard.tasks) == 0 {
+				return m, nil
+			}
+			m.diff.busy = true
+			m.Status = "loading task diff"
+			return m, m.diffCommand(m.dashboard.tasks[m.dashboard.selected].ID)
 		case "n":
 			m.Panel = PanelTask
 			m.TaskDescription = ""
@@ -372,7 +384,7 @@ func (m Model) dashboardView() string {
 	}
 	lines := []string{"Task dashboard"}
 	var body []string
-	help := "Enter details | r refresh | l more"
+	help := "Enter details | f diff | r refresh | l more"
 	if m.dashboard.snapshot != nil {
 		s := m.dashboard.snapshot
 		body = append(body, "Task: "+safeLabel(s.Task.Description), "Status: "+safeLabel(string(s.Task.Status)), "Agents:")
@@ -389,9 +401,9 @@ func (m Model) dashboardView() string {
 		body = append(body, m.dashboard.logs...)
 		start := min(m.dashboard.detailOffset, max(0, len(body)-m.dashboardRows()))
 		body = body[start:min(len(body), start+m.dashboardRows())]
-		help = "c cancel | r refresh | Esc back"
+		help = "f diff | c cancel | r refresh | Esc back"
 		if len(s.Approvals) > 0 {
-			help = "a approve | d deny | c cancel | r refresh | Esc back"
+			help = "a approve | d deny | f diff | c cancel | r refresh | Esc back"
 		}
 	} else {
 		if len(m.dashboard.tasks) == 0 {

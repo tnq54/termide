@@ -69,6 +69,8 @@ func (h *Handler) Handle(ctx context.Context, message protocol.Message) (protoco
 		return h.subscribe(ctx, message)
 	case protocol.MessageListTasks, protocol.MessageTaskSnapshot:
 		return h.handleDashboard(ctx, message)
+	case protocol.MessageTaskDiff:
+		return h.taskDiff(ctx, message)
 	case protocol.MessageListFiles, protocol.MessageReadFile, protocol.MessageSaveFile:
 		return h.handleFiles(ctx, message)
 	case protocol.MessageOpenWorkspace:

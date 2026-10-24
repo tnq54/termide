@@ -14,6 +14,7 @@ Dashboard hoạt động khi client mở workspace từ server có protocol `tas
 | `a` | Duyệt (approve) approval pending đầu tiên của task |
 | `d` | Từ chối (deny) approval pending đầu tiên của task |
 | `Enter` | Mở agent status và event log của task |
+| `f` | Xem diff worktree của task (từ danh sách hoặc detail) |
 | `r` | Refresh task list, hoặc refresh detail/log incremental |
 | `l` | Tải trang task kế tiếp |
 | `Esc` | Quay lại dashboard từ detail |
@@ -56,6 +57,14 @@ Khi stream SSH đóng, server hủy các job của phiên và chờ runtime ghi 
 cuối trước khi đóng store. Chưa có detached supervisor: task không tiếp tục
 chạy qua reconnect. Cơ chế này được kiểm thử bằng runner giả tuân theo context;
 chưa bảo đảm dừng toàn bộ cây process con của OpenCode khi ngắt kết nối.
+
+## Xem diff
+
+Trong danh sách hoặc detail, nhấn `f` để tải diff của task: mỗi agent có
+worktree sẽ hiện branch, danh sách file đổi và patch (cắt ở 64 KiB mỗi agent).
+Agent chưa có worktree được bỏ qua; worktree nằm ngoài workspace root hoặc git
+lỗi được báo trong từng mục mà không làm hỏng cả bảng review. Panel diff cuộn
+bằng ↑/↓/PageUp/PageDown, Esc quay về nơi đã mở (detail hoặc dashboard).
 
 ## Hủy task
 

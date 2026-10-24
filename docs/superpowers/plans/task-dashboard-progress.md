@@ -53,6 +53,16 @@ the process-tree limitation documented above still applies.
 - [x] Documented worst case: manual commands queue up to 10s behind an
   in-flight wait on the serial transport.
 
+## Task diff review
+
+- [x] RED→GREEN: `tasks.diff` returns per-agent worktree files and capped
+  patches; foreign/missing tasks rejected; agents without worktrees skipped.
+- [x] RED→GREEN: diff panel opens from list and detail, renders patches,
+  scrolls in bounds, Esc returns to origin, errors retain state.
+- [x] Worktree paths validated inside the workspace root; per-agent git
+  failures reported inline.
+- [x] Full suite, race, vet and cross-builds passed.
+
 ## Quick terminal commands
 
 - [x] RED→GREEN: `run_command` executes safe commands in the workspace root,
