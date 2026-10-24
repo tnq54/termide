@@ -63,6 +63,15 @@ the process-tree limitation documented above still applies.
   failures reported inline.
 - [x] Full suite, race, vet and cross-builds passed.
 
+## LSP code action
+
+- [x] RED→GREEN: client `CodeAction` parse `changes` map, null rỗng.
+- [x] RED→GREEN: server list (lọc action không có edits) + apply một lần
+  qua nonce, validate workspace/escape/range, từ chối reuse và ID lạ.
+- [x] RED→GREEN: TUI popup `Ctrl+X` theo dòng hiện tại, Up/Down/Enter/Esc,
+  áp dụng server-side và tự tải lại buffer sạch (giữ nguyên khi dirty).
+- [x] Full suite, race (ui/editor/server/lsp), vet, cross-builds passed.
+
 ## LSP rename
 
 - [x] RED→GREEN: client `Rename` parse changes-map, từ chối documentChanges;

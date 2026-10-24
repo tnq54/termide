@@ -207,9 +207,9 @@ func (m Model) receiveFile(result fileResult) (tea.Model, tea.Cmd) {
 		m.files.undo = nil
 		m.files.redo = nil
 		m.Status = "file opened"
-		if m.renameNotice != "" {
-			m.Status = m.renameNotice
-			m.renameNotice = ""
+		if m.reloadNotice != "" {
+			m.Status = m.reloadNotice
+			m.reloadNotice = ""
 		}
 		return m, tea.Batch(m.files.input.Focus(), m.diagnosticsCommand(m.files.document.Path))
 	case protocol.MessageSaveFile:
@@ -262,6 +262,28 @@ func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.renameBuf = ""
 				m.Status = "rename cancelled"
 				return m, nil
+			}
+		}
+		if len(m.codeActions) > 0 {
+			switch key.Type {
+			case tea.KeyUp:
+				m.codeActionSel = (m.codeActionSel + len(m.codeActions) - 1) % len(m.codeActions)
+				return m, nil
+			case tea.KeyDown:
+				m.codeActionSel = (m.codeActionSel + 1) % len(m.codeActions)
+				return m, nil
+			case tea.KeyEnter:
+				id := m.codeActions[m.codeActionSel].ID
+				m.codeActions = nil
+				m.codeActionSel = 0
+				return m, m.codeActionApplyCommand(id)
+			case tea.KeyEsc:
+				m.codeActions = nil
+				m.codeActionSel = 0
+				return m, nil
+			default:
+				m.codeActions = nil
+				m.codeActionSel = 0
 			}
 		}
 		if m.completing() {
@@ -333,6 +355,29 @@ func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			line, col := m.files.input.CursorLineCol()
 			return m, m.completeCommand(m.files.document.Path, line, col)
+		case tea.KeyCtrlX:
+			if m.remote == nil || !m.ready || m.files.busy {
+				return m, nil
+			}
+			m.closeCompletion()
+			m.sigHelp = nil
+			m.hover = ""
+			m.renaming = false
+			m.renameBuf = ""
+			m.closeCompletion()
+			m.sigHelp = nil
+			m.hover = ""
+			m.renaming = false
+			m.renameBuf = ""
+			line, col := m.files.input.CursorLineCol()
+			end := col
+			if text := m.files.input.Value(); text != "" {
+				lines := strings.Split(text, "\n")
+				if line >= 0 && line < len(lines) {
+					end = len([]rune(lines[line]))
+				}
+			}
+			return m, m.codeActionCommand(m.files.document.Path, line, 0, line, end)
 		case tea.KeyCtrlR:
 			if m.remote == nil || !m.ready || m.files.busy {
 				return m, nil
@@ -486,6 +531,7 @@ func (m Model) editorView() string {
 		lines = renderHover(lines, m.hover, width)
 		lines = m.renderCompletion(lines, width)
 		lines = m.renderSignature(lines, width)
+		lines = m.renderCodeActions(lines, width)
 		lines = renderProblems(lines, m.diags, width)
 		lines = append(lines, "Ctrl+S save | Esc files | Ctrl+N/P tabs | Ctrl+K hover", "Ctrl+Z/Y undo/redo | Ctrl+G discard")
 	} else {

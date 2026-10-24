@@ -50,7 +50,9 @@ type Model struct {
 	sigAutoOff      bool
 	renaming        bool
 	renameBuf       string
-	renameNotice    string
+	reloadNotice    string
+	codeActions     []protocol.LspCodeActionItem
+	codeActionSel   int
 }
 
 func NewModel() Model {
@@ -75,6 +77,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.receiveComplete(value)
 	case renameResult:
 		return m.receiveRename(value)
+	case codeActionListResult:
+		return m.receiveCodeActionList(value)
+	case codeActionAppliedResult:
+		return m.receiveCodeActionApplied(value)
 	case signatureResult:
 		return m.receiveSignature(value)
 	case diagnosticsResult:

@@ -60,7 +60,7 @@ func (m Model) receiveRename(result renameResult) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.Status = fmt.Sprintf("renamed in %d file(s)", len(result.files))
-	m.renameNotice = m.Status
+	m.reloadNotice = m.Status
 	return m, m.fileCommand(protocol.MessageReadFile, protocol.FileRequest{Path: m.files.document.Path})
 }
 
