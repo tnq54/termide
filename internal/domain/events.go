@@ -21,9 +21,15 @@ type EventEnvelope struct {
 }
 
 func (e EventEnvelope) Validate() error {
-	if e.WorkspaceID == "" || e.TaskID == "" || e.AgentID == "" { return fmt.Errorf("event identity is required") }
-	if e.Sequence == 0 { return fmt.Errorf("event sequence must be positive") }
-	if e.Type == "" { return fmt.Errorf("event type is required") }
+	if e.WorkspaceID == "" || e.TaskID == "" || e.AgentID == "" {
+		return fmt.Errorf("event identity is required")
+	}
+	if e.Sequence == 0 {
+		return fmt.Errorf("event sequence must be positive")
+	}
+	if e.Type == "" {
+		return fmt.Errorf("event type is required")
+	}
 	return nil
 }
 
@@ -34,11 +40,20 @@ type Workspace struct {
 	Root string `json:"root"`
 }
 
+type ApprovalStatus string
+
+const (
+	ApprovalPending  ApprovalStatus = "pending"
+	ApprovalApproved ApprovalStatus = "approved"
+	ApprovalDenied   ApprovalStatus = "denied"
+)
+
 type ApprovalRequest struct {
-	ID          string `json:"id"`
-	TaskID      string `json:"task_id"`
-	AgentID     string `json:"agent_id"`
-	Command     string `json:"command"`
-	Reason      string `json:"reason"`
-	WorkingDir  string `json:"working_dir"`
+	ID         string         `json:"id"`
+	TaskID     string         `json:"task_id"`
+	AgentID    string         `json:"agent_id"`
+	Command    string         `json:"command"`
+	Reason     string         `json:"reason"`
+	WorkingDir string         `json:"working_dir"`
+	Status     ApprovalStatus `json:"status"`
 }

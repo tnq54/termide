@@ -28,7 +28,7 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	for _, name := range []string{"migrations/001_initial.sql", "migrations/002_durable_runs.sql"} {
+	for _, name := range []string{"migrations/001_initial.sql", "migrations/002_durable_runs.sql", "migrations/003_approvals.sql"} {
 		migration, err := migrations.ReadFile(name)
 		if err != nil {
 			db.Close()
