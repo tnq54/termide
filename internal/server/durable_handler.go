@@ -12,7 +12,7 @@ import (
 )
 
 func NewDurableHandler(s *store.Store, supervisor *Supervisor) *Handler {
-	return &Handler{store: s, runtime: agent.NewTaskRuntime(s), supervisor: supervisor}
+	return &Handler{store: s, runtime: agent.NewTaskRuntime(s), supervisor: supervisor, pty: supervisor.PTY()}
 }
 
 func (h *Handler) startDurableTask(ctx context.Context, message protocol.Message) (protocol.Message, error) {

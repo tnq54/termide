@@ -24,6 +24,7 @@ type Supervisor struct {
 	store  *store.Store
 	runner agent.Runner
 	owner  string
+	pty    *PTYRegistry
 	mu     sync.Mutex
 	jobs   map[string]context.CancelFunc
 	wg     sync.WaitGroup
@@ -32,7 +33,18 @@ type Supervisor struct {
 }
 
 func NewSupervisor(s *store.Store, runner agent.Runner, owner string) *Supervisor {
-	return &Supervisor{store: s, runner: runner, owner: owner, jobs: make(map[string]context.CancelFunc)}
+	return &Supervisor{store: s, runner: runner, owner: owner, jobs: make(map[string]context.CancelFunc), pty: NewPTYRegistry()}
+}
+
+// PTY returns the daemon-scoped terminal registry shared by every durable
+// handler, so sessions survive reconnects.
+func (s *Supervisor) PTY() *PTYRegistry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pty == nil {
+		s.pty = NewPTYRegistry()
+	}
+	return s.pty
 }
 
 // Handler serves the full workspace protocol with durable start/cancel.
@@ -286,11 +298,14 @@ func (s *Supervisor) Close(ctx context.Context) error {
 // are rejected, the caller waits up to the context deadline, and unfinished
 // runs keep their leases so a later daemon recovers them. Never use Close for
 // planned daemon restarts: Close cancels every job and persists cancellation.
+// PTY shells are child processes of this daemon and cannot survive a restart,
+// so they are always terminated here.
 func (s *Supervisor) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
 	s.closed = true
 	s.mu.Unlock()
 	waitErr := s.Wait(ctx)
+	s.PTY().CloseAll()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return errors.Join(waitErr, errors.Join(s.errs...))

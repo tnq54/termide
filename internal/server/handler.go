@@ -18,6 +18,8 @@ type Handler struct {
 	runner     agent.Runner
 	isolate    bool
 	supervisor *Supervisor
+	pty        *PTYRegistry
+	ptyOwned   bool
 	jobsMu     sync.Mutex
 	jobs       sync.WaitGroup
 	cancels    map[string]context.CancelFunc
@@ -41,17 +43,22 @@ func (h *Handler) Close() error {
 	}
 	h.jobsMu.Lock()
 	defer h.jobsMu.Unlock()
+	if h.ptyOwned && h.pty != nil {
+		h.pty.CloseAll()
+	}
 	return errors.Join(h.jobErrors...)
 }
 
-func NewHandler(s *store.Store) *Handler { return &Handler{store: s, runtime: agent.NewTaskRuntime(s)} }
+func NewHandler(s *store.Store) *Handler {
+	return &Handler{store: s, runtime: agent.NewTaskRuntime(s), pty: NewPTYRegistry(), ptyOwned: true}
+}
 
 func NewHandlerWithRunner(s *store.Store, runner agent.Runner) *Handler {
-	return &Handler{store: s, runtime: agent.NewTaskRuntime(s), runner: runner}
+	return &Handler{store: s, runtime: agent.NewTaskRuntime(s), runner: runner, pty: NewPTYRegistry(), ptyOwned: true}
 }
 
 func NewIsolatedHandler(s *store.Store, runner agent.Runner) *Handler {
-	return &Handler{store: s, runtime: agent.NewTaskRuntime(s), runner: runner, isolate: true}
+	return &Handler{store: s, runtime: agent.NewTaskRuntime(s), runner: runner, isolate: true, pty: NewPTYRegistry(), ptyOwned: true}
 }
 func (h *Handler) HandleWithAgents(ctx context.Context, message protocol.Message, specs []agent.Spec, runner agent.Runner) (protocol.Message, error) {
 	if message.Type != protocol.MessageStartTask {
@@ -83,6 +90,8 @@ func (h *Handler) Handle(ctx context.Context, message protocol.Message) (protoco
 		return h.approve(ctx, message)
 	case protocol.MessageRunCommand:
 		return h.runCommand(ctx, message)
+	case protocol.MessagePtyOpen, protocol.MessagePtyWrite, protocol.MessagePtyRead, protocol.MessagePtyResize, protocol.MessagePtyClose:
+		return h.handlePty(ctx, message)
 	case protocol.MessageCreateTask:
 		if message.WorkspaceID == "" || message.TaskID == "" {
 			return protocol.Message{}, fmt.Errorf("workspace and task IDs are required")
