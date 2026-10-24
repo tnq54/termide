@@ -19,6 +19,38 @@ type Client struct {
 	conn   *Conn
 	root   string
 	opened map[string]bool
+	diags  map[string][]Diagnostic
+}
+
+// Diagnostic is one published problem attached to a URI, flattened to
+// zero-based line/character offsets.
+type Diagnostic struct {
+	Line         int
+	Character    int
+	EndLine      int
+	EndCharacter int
+	Severity     int
+	Message      string
+}
+
+type rawDiagnostic struct {
+	Range struct {
+		Start struct {
+			Line      int `json:"line"`
+			Character int `json:"character"`
+		} `json:"start"`
+		End struct {
+			Line      int `json:"line"`
+			Character int `json:"character"`
+		} `json:"end"`
+	} `json:"range"`
+	Severity int    `json:"severity"`
+	Message  string `json:"message"`
+}
+
+type publishParams struct {
+	URI         string          `json:"uri"`
+	Diagnostics []rawDiagnostic `json:"diagnostics"`
 }
 
 func NewClient(binary string, args []string) *Client {
@@ -48,7 +80,7 @@ func (c *Client) Start(ctx context.Context, root string) error {
 		return fmt.Errorf("start lsp: %w", err)
 	}
 	stream := &pipeStream{reader: stdout, writer: stdin, closer: stdin}
-	conn := NewConn(stream, nil)
+	conn := NewConn(stream, c.onNotify)
 	initCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if _, err := conn.Call(initCtx, "initialize", map[string]any{
@@ -71,7 +103,46 @@ func (c *Client) Start(ctx context.Context, root string) error {
 	c.conn = conn
 	c.root = root
 	c.opened = make(map[string]bool)
+	if c.diags == nil {
+		c.diags = make(map[string][]Diagnostic)
+	}
 	return nil
+}
+
+// onNotify collects textDocument/publishDiagnostics per URI.
+func (c *Client) onNotify(method string, params json.RawMessage) {
+	if method != "textDocument/publishDiagnostics" {
+		return
+	}
+	var published publishParams
+	if err := json.Unmarshal(params, &published); err != nil || published.URI == "" {
+		return
+	}
+	items := make([]Diagnostic, 0, len(published.Diagnostics))
+	for _, raw := range published.Diagnostics {
+		items = append(items, Diagnostic{
+			Line:         raw.Range.Start.Line,
+			Character:    raw.Range.Start.Character,
+			EndLine:      raw.Range.End.Line,
+			EndCharacter: raw.Range.End.Character,
+			Severity:     raw.Severity,
+			Message:      raw.Message,
+		})
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.diags == nil {
+		c.diags = make(map[string][]Diagnostic)
+	}
+	c.diags[published.URI] = items
+}
+
+// Diagnostics returns the latest published problems for a URI, possibly
+// empty when the server reported a clean file.
+func (c *Client) Diagnostics(uri string) []Diagnostic {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]Diagnostic(nil), c.diags[uri]...)
 }
 
 func (c *Client) connFor() (*Conn, error) {
