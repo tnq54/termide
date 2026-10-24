@@ -18,6 +18,7 @@ const (
 	MessageApprove    MessageType = "approve"
 	MessageCancel     MessageType = "cancel"
 	MessageRunCommand MessageType = "run_command"
+	MessageReplay     MessageType = "replay"
 	MessageEvent      MessageType = "event"
 	MessageError      MessageType = "error"
 )

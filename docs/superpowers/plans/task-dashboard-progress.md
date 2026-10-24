@@ -14,6 +14,14 @@ Cancel acknowledgement is `tasks.cancel_requested`, not a fabricated journal
 event. Runtime owns final state persistence. Cancellation remains session-scoped;
 the process-tree limitation documented above still applies.
 
+## Reconnect replay
+
+- [x] RED→GREEN: `subscribe` validates workspace and returns `replay` events
+  strictly after `AfterSequence`, preserving SQLite sequence order.
+- [x] Client transport integration verifies cursor 1 receives events 2 and 3,
+  while unrelated workspaces are excluded.
+- [ ] Live push and durable supervisor across reconnect remain future work.
+
 ## Background execution (current behavior)
 
 - [x] RED→GREEN integration: Start acknowledges before a blocking runner ends;

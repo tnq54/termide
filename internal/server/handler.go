@@ -59,6 +59,8 @@ func (h *Handler) HandleWithAgents(ctx context.Context, message protocol.Message
 }
 func (h *Handler) Handle(ctx context.Context, message protocol.Message) (protocol.Message, error) {
 	switch message.Type {
+	case protocol.MessageSubscribe:
+		return h.subscribe(ctx, message)
 	case protocol.MessageListTasks, protocol.MessageTaskSnapshot:
 		return h.handleDashboard(ctx, message)
 	case protocol.MessageListFiles, protocol.MessageReadFile, protocol.MessageSaveFile:

@@ -66,4 +66,9 @@ Phản hồi `tasks.cancel_requested` chỉ xác nhận đã gửi yêu cầu; r
 dừng xong, nhấn `r` để xem trạng thái mới. Lỗi request giữ nguyên trạng thái đã
 biết và hiển thị lỗi. Giới hạn dừng process con OpenCode nêu trên vẫn áp dụng.
 
-Chưa có live push hoặc automatic reconnect. `r` là thao tác refresh rõ ràng.
+Client có thể dùng request `subscribe` với `AfterSequence` để lấy replay event
+đã lưu trong SQLite theo đúng workspace; event trả về được giữ nguyên thứ tự
+sequence. Đây là reconnect/replay một lần, chưa phải live push.
+
+`r` vẫn là thao tác refresh rõ ràng cho task snapshot. Job đang chạy vẫn bị hủy
+khi stdio session đóng; durable supervisor qua reconnect chưa có.
