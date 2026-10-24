@@ -15,13 +15,25 @@ import (
 	"termide/internal/protocol"
 )
 
+type editorTab struct {
+	document *domain.FileDocument
+	input    editor.Input
+	undo     []string
+	redo     []string
+}
+
 type fileEditor struct {
-	folder     string
-	entries    []domain.FileEntry
-	selected   int
+	folder   string
+	entries  []domain.FileEntry
+	selected int
+	// document/input/undo/redo are the active tab's working state.
+	// Inactive tabs rest in tabs; the file list shows when document is nil.
 	document   *domain.FileDocument
 	input      editor.Input
 	undo, redo []string
+	tabs       []editorTab
+	width      int
+	height     int
 	busy       bool
 }
 
@@ -29,9 +41,119 @@ func newFileEditor() fileEditor {
 	input := editor.NewInput()
 	input.SetWidth(40)
 	input.SetHeight(10)
-	return fileEditor{folder: ".", input: input}
+	return fileEditor{folder: ".", input: input, width: 40, height: 10}
 }
 func (f fileEditor) dirty() bool { return f.document != nil && f.input.Value() != f.document.Text }
+
+func (f fileEditor) anyDirty() bool {
+	if f.dirty() {
+		return true
+	}
+	for _, tab := range f.tabs {
+		if tab.document != nil && tab.input.Value() != tab.document.Text {
+			return true
+		}
+	}
+	return false
+}
+
+// stashActive parks the active tab into the background list, replacing any
+// entry for the same path so reopening never duplicates a tab.
+func (f *fileEditor) stashActive() {
+	if f.document == nil {
+		return
+	}
+	tab := editorTab{document: f.document, input: f.input, undo: f.undo, redo: f.redo}
+	for i := range f.tabs {
+		if f.tabs[i].document != nil && f.tabs[i].document.Path == f.document.Path {
+			f.tabs[i] = tab
+			f.document = nil
+			return
+		}
+	}
+	f.tabs = append(f.tabs, tab)
+	f.document = nil
+}
+
+func (f *fileEditor) loadTab(index int) {
+	tab := f.tabs[index]
+	f.tabs = append(f.tabs[:index], f.tabs[index+1:]...)
+	f.document = tab.document
+	f.input = tab.input
+	f.undo = tab.undo
+	f.redo = tab.redo
+}
+
+// discardActive drops the active tab without stashing it.
+func (f *fileEditor) discardActive() {
+	f.document = nil
+	if len(f.tabs) == 0 {
+		return
+	}
+	last := f.tabs[len(f.tabs)-1]
+	f.tabs = f.tabs[:len(f.tabs)-1]
+	f.document = last.document
+	f.input = last.input
+	f.undo = last.undo
+	f.redo = last.redo
+}
+
+// rotateNext stashes the active tab at the end and loads the oldest one.
+func (f *fileEditor) rotateNext() {
+	active := editorTab{document: f.document, input: f.input, undo: f.undo, redo: f.redo}
+	f.tabs = append(f.tabs, active)
+	next := f.tabs[0]
+	f.tabs = f.tabs[1:]
+	f.document = next.document
+	f.input = next.input
+	f.undo = next.undo
+	f.redo = next.redo
+}
+
+// rotatePrev stashes the active tab at the front and loads the newest one.
+func (f *fileEditor) rotatePrev() {
+	active := editorTab{document: f.document, input: f.input, undo: f.undo, redo: f.redo}
+	f.tabs = append([]editorTab{active}, f.tabs...)
+	last := len(f.tabs) - 1
+	next := f.tabs[last]
+	f.tabs = f.tabs[:last]
+	f.document = next.document
+	f.input = next.input
+	f.undo = next.undo
+	f.redo = next.redo
+}
+
+func (f *fileEditor) newTabInput() editor.Input {
+	input := editor.NewInput()
+	input.SetWidth(max(1, f.width))
+	input.SetHeight(max(1, f.height))
+	return input
+}
+
+func (f *fileEditor) tabBar() string {
+	var names []string
+	for _, tab := range f.tabs {
+		if tab.document == nil {
+			continue
+		}
+		name := safeLabel(tab.document.Path)
+		if tab.input.Value() != tab.document.Text {
+			name += "*"
+		}
+		names = append(names, "["+name+"]")
+	}
+	if f.document != nil {
+		name := safeLabel(f.document.Path)
+		if f.input.Value() != f.document.Text {
+			name += "*"
+		}
+		names = append(names, ">"+name+"<")
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return "tabs: " + strings.Join(names, " ")
+}
 
 type fileResult struct {
 	kind     protocol.MessageType
@@ -105,16 +227,30 @@ func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.Status = "Unsaved changes: Ctrl+S save; Ctrl+G discard"
 				return m, nil
 			}
-			m.files.document = nil
+			m.files.stashActive()
 			m.files.input.Blur()
 			return m, nil
 		case tea.KeyCtrlG:
 			if m.files.busy {
 				return m, nil
 			}
-			m.files.document = nil
+			m.files.discardActive()
 			m.files.input.Blur()
 			m.Status = "edits discarded"
+			return m, nil
+		case tea.KeyCtrlN:
+			if m.files.busy || len(m.files.tabs) == 0 {
+				return m, nil
+			}
+			m.files.rotateNext()
+			m.Status = "next tab"
+			return m, nil
+		case tea.KeyCtrlP:
+			if m.files.busy || len(m.files.tabs) == 0 {
+				return m, nil
+			}
+			m.files.rotatePrev()
+			m.Status = "previous tab"
 			return m, nil
 		case tea.KeyCtrlS:
 			if m.files.busy || !m.files.dirty() {
@@ -178,9 +314,27 @@ func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if entry.Directory {
 			kind = protocol.MessageListFiles
 		}
+		target := path.Join(m.files.folder, entry.Name)
+		if kind == protocol.MessageReadFile {
+			if m.files.document != nil && m.files.document.Path == target {
+				return m, m.files.input.Focus()
+			}
+			for i := range m.files.tabs {
+				if m.files.tabs[i].document != nil && m.files.tabs[i].document.Path == target {
+					if m.files.busy {
+						return m, nil
+					}
+					m.files.stashActive()
+					m.files.loadTab(i)
+					return m, m.files.input.Focus()
+				}
+			}
+			m.files.stashActive()
+			m.files.input = m.files.newTabInput()
+		}
 		m.files.busy = true
 		m.Status = "loading"
-		return m, m.fileCommand(kind, protocol.FileRequest{Path: path.Join(m.files.folder, entry.Name)})
+		return m, m.fileCommand(kind, protocol.FileRequest{Path: target})
 	}
 	return m, nil
 }
@@ -194,6 +348,9 @@ func (m Model) editorView() string {
 		height = 18
 	}
 	var lines []string
+	if bar := m.files.tabBar(); bar != "" {
+		lines = append(lines, bar)
+	}
 	if m.files.document != nil {
 		marker := ""
 		if m.files.dirty() {
@@ -201,7 +358,7 @@ func (m Model) editorView() string {
 		}
 		lines = append(lines, safeLabel(m.files.document.Path)+marker)
 		lines = append(lines, strings.Split(m.files.input.View(), "\n")...)
-		lines = append(lines, "Ctrl+S save | Esc files", "Ctrl+Z/Y undo/redo | Ctrl+G discard")
+		lines = append(lines, "Ctrl+S save | Esc files | Ctrl+N/P tabs", "Ctrl+Z/Y undo/redo | Ctrl+G discard")
 	} else {
 		lines = append(lines, "Files: "+safeLabel(m.files.folder))
 		visible := max(1, height-4)

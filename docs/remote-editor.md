@@ -18,18 +18,24 @@ Khi trạng thái là `connected`:
 | Phím mũi tên, Home/End, PageUp/PageDown | Di chuyển trong file |
 | Ctrl+S | Lưu snapshot hiện tại lên VPS |
 | Ctrl+Z / Ctrl+Y | Undo / redo (tối đa 50 bước undo) |
-| Esc trong editor | Quay lại danh sách nếu đã lưu |
-| Ctrl+G trong editor | Bỏ thay đổi chưa lưu và quay lại danh sách |
+| Esc trong editor | Cất tab hiện tại, quay lại danh sách nếu đã lưu |
+| Ctrl+G trong editor | Bỏ thay đổi chưa lưu và đóng tab |
+| Ctrl+N / Ctrl+P trong editor | Tab kế tiếp / tab trước (vòng tròn) |
 
 Trong editor các chữ `q`, `a`, `e` là nội dung, không phải phím điều hướng.
-Ctrl+C không thoát khi buffer chưa lưu hoặc Save còn đang chờ xác nhận;
+Ctrl+C không thoát khi bất kỳ tab nào chưa lưu hoặc Save còn đang chờ xác nhận;
 Ctrl+S để lưu hoặc Ctrl+G để bỏ thay đổi.
 Dấu `*` bên tên file là nội dung chưa lưu. Có thể tiếp tục gõ khi đang Save;
 phản hồi Save chỉ xác nhận snapshot đã gửi, không xóa các chỉnh sửa mới hơn.
+Dòng `tabs:` liệt kê các tab nền trong `[...]` và tab đang xem trong `>...<`;
+dấu `*` trong ngoặc là tab chưa lưu. Enter mở file mới vào tab mới; mở lại file
+đang mở ở tab khác sẽ chuyển tới tab đó thay vì mở trùng. Không chuyển tab khi
+Save đang bay để giữ đúng mapping xác nhận.
 
 ## Phạm vi hiện tại
 
-- Một file đang mở; text UTF-8 tối đa 1 MiB. Binary và ký tự điều khiển terminal
+- Nhiều tab, mỗi tab giữ document/input/undo-redo riêng; text UTF-8 tối đa 1 MiB.
+  Binary và ký tự điều khiển terminal
   không được mở để sửa. Giữ nguyên tab, CRLF và newline cuối file. File dùng
   CR đơn làm newline chưa hỗ trợ; CR trong paste được chuyển sang newline.
 - Hiển thị dòng và viewport cuộn ngang/dọc, không đổi code để vừa màn hình.
@@ -41,6 +47,6 @@ phản hồi Save chỉ xác nhận snapshot đã gửi, không xóa các chỉn
 - Kiểm tra hash và rename không phải transaction với process ngoài TermIDE.
   Nếu công cụ khác ghi đúng giữa hai thao tác, vẫn có thể xảy ra race. Không tự merge.
 - Undo/redo khôi phục text và đặt cursor ở cuối nội dung; chưa khôi phục lựa chọn/cursor cũ.
-- Chưa có nhiều tab, syntax highlighting, LSP, tạo/xóa file hay clipboard hệ điều hành.
+- Chưa có syntax highlighting, LSP, tạo/xóa file hay clipboard hệ điều hành.
 
 Sau lỗi kết nối, chưa có tự reconnect; giữ/copy nội dung chưa lưu trước khi đóng client.

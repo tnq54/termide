@@ -74,15 +74,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.Width, m.Height = value.Width, value.Height
-		m.files.input.SetWidth(max(1, value.Width))
-		m.files.input.SetHeight(max(1, value.Height-4))
+		m.files.width = max(1, value.Width)
+		m.files.height = max(1, value.Height-4)
+		m.files.input.SetWidth(m.files.width)
+		m.files.input.SetHeight(m.files.height)
+		for i := range m.files.tabs {
+			m.files.tabs[i].input.SetWidth(m.files.width)
+			m.files.tabs[i].input.SetHeight(m.files.height)
+		}
 	case tea.KeyMsg:
 		if value.Type == tea.KeyCtrlC {
 			if m.files.busy && m.files.document != nil {
 				m.Status = "Save in progress; wait for server confirmation"
 				return m, nil
 			}
-			if m.files.dirty() {
+			if m.files.anyDirty() {
 				m.Panel = PanelEditor
 				m.Status = "Unsaved changes: Ctrl+S save; Ctrl+G discard"
 				return m, nil

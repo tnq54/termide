@@ -53,6 +53,17 @@ the process-tree limitation documented above still applies.
 - [x] Documented worst case: manual commands queue up to 10s behind an
   in-flight wait on the serial transport.
 
+## Multi-tab editor
+
+- [x] RED→GREEN: Enter stashes the active tab and opens into a new tab;
+  reopening a background tab switches to it without duplicating.
+- [x] RED→GREEN: Ctrl+N/Ctrl+P cycle tabs preserving per-tab edits and
+  undo history; Esc stashes clean tabs; Ctrl+G discards.
+- [x] RED→GREEN: tab switch refused while a save is in flight; Ctrl+C
+  refused when any background tab is dirty.
+- [x] Existing single-tab tests pass unchanged; full suite, race, vet and
+  cross-builds passed.
+
 ## Durable approval gate
 
 - [x] RED→GREEN: approvals persist in SQLite; resolve is single-winner,
