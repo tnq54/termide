@@ -49,6 +49,7 @@ func TestDashboardCanStartQueuedTaskAndRefreshStatus(t *testing.T) {
 	if response.Type != protocol.MessageEvent {
 		t.Fatalf("response type = %q", response.Type)
 	}
+	h.jobs.Wait()
 	task, err := s.GetTask(ctx, "t")
 	if err != nil {
 		t.Fatal(err)

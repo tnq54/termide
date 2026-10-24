@@ -3,17 +3,144 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"termide/internal/agent"
 	"termide/internal/client"
 	"termide/internal/domain"
+	"termide/internal/protocol"
 	"termide/internal/server"
 	"termide/internal/store"
 )
+
+type dashboardRunner struct{}
+
+func (dashboardRunner) Run(_ context.Context, spec agent.Spec, emit func(agent.Event)) error {
+	emit(agent.Event{AgentID: spec.ID, Output: "completed output"})
+	return nil
+}
+func TestDashboardStartThroughTransportReloadsFinalStatus(t *testing.T) {
+	m, s := dashboardFixture(t)
+	if err := s.UpdateTaskStatus(context.Background(), "task-a", domain.TaskQueued); err != nil {
+		t.Fatal(err)
+	}
+	m = applyCommand(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	next, start := m.Update(key("s"))
+	m = next.(Model)
+	if start == nil {
+		t.Fatal("start not scheduled")
+	}
+	next, reload := m.Update(start())
+	m = next.(Model)
+	if reload == nil {
+		t.Fatalf("final snapshot not requested: %s", m.Status)
+	}
+	next, _ = m.Update(reload())
+	m = next.(Model)
+	deadline := time.Now().Add(time.Second)
+	for m.dashboard.snapshot.Task.Status == domain.TaskRunning && time.Now().Before(deadline) {
+		m = applyCommand(t, m, key("r"))
+	}
+	if m.dashboard.snapshot.Task.Status != domain.TaskCompleted || !strings.Contains(strings.Join(m.dashboard.logs, "\n"), "completed output") {
+		t.Fatal(m.dashboard.snapshot)
+	}
+}
+
+type startCapture struct{ request protocol.Message }
+
+func (r *startCapture) Call(_ context.Context, request protocol.Message) (protocol.Message, error) {
+	r.request = request
+	return protocol.Message{Type: protocol.MessageEvent, WorkspaceID: request.WorkspaceID, TaskID: request.TaskID, Event: &domain.EventEnvelope{WorkspaceID: request.WorkspaceID, TaskID: request.TaskID, AgentID: "system", Sequence: 1, Type: domain.EventTaskUpdated}}, nil
+}
+func TestDashboardStartUsesDescriptionAndUniqueAgent(t *testing.T) {
+	remote := &startCapture{}
+	m := NewRemoteModel(remote, domain.Workspace{ID: "w"})
+	m.ready = true
+	m.Panel = PanelAgents
+	m.dashboard.snapshot = &domain.TaskSnapshot{Task: domain.Task{ID: "t", Description: "sửa lỗi Python", Status: domain.TaskQueued}}
+	var previous string
+	for i := 0; i < 2; i++ {
+		cmd := m.dashboardCommand(protocol.MessageStartTask, "t", 0, 0)
+		if result := cmd().(dashboardResult); result.err != nil {
+			t.Fatal(result.err)
+		}
+		var specs []map[string]string
+		if err := json.Unmarshal(remote.request.Payload, &specs); err != nil {
+			t.Fatal(err)
+		}
+		if len(specs) != 1 || specs[0]["command"] != "sửa lỗi Python" {
+			t.Fatal(specs)
+		}
+		if specs[0]["id"] == "" || specs[0]["id"] == previous {
+			t.Fatal("agent ID reused")
+		}
+		previous = specs[0]["id"]
+	}
+}
+
+func TestDashboardOfflineRefreshDoesNotScheduleIO(t *testing.T) {
+	m := NewModel()
+	next, cmd := m.Update(key("r"))
+	if cmd != nil || next.(Model).dashboard.busy {
+		t.Fatal("offline refresh scheduled IO or locked dashboard")
+	}
+}
+
+func TestDashboardScrollKeepsSelectionAndStatusVisible(t *testing.T) {
+	m := NewModel()
+	m.Width = 24
+	m.Height = 8
+	m.Status = "connected"
+	for i := 0; i < 30; i++ {
+		m.dashboard.tasks = append(m.dashboard.tasks, domain.Task{Description: fmt.Sprintf("task-%02d", i)})
+	}
+	for i := 0; i < 29; i++ {
+		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = next.(Model)
+	}
+	if !strings.Contains(m.View(), "> task-29") || !strings.Contains(m.View(), "connected") {
+		t.Fatal(m.View())
+	}
+	m.Panel = PanelAgents
+	m.dashboard.snapshot = &domain.TaskSnapshot{Task: domain.Task{Description: "details"}}
+	for i := 0; i < 30; i++ {
+		m.dashboard.logs = append(m.dashboard.logs, fmt.Sprintf("log-%02d", i))
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	m = next.(Model)
+	if !strings.Contains(m.View(), "log-29") || !strings.Contains(m.View(), "connected") {
+		t.Fatal(m.View())
+	}
+}
+
+func TestDashboardWideUnicodeFitsCells(t *testing.T) {
+	m := NewModel()
+	m.Width = 9
+	m.Height = 8
+	m.dashboard.tasks = []domain.Task{{Description: strings.Repeat("界", 20)}}
+	for _, line := range strings.Split(m.View(), "\n") {
+		if ansi.StringWidth(line) > m.Width {
+			t.Fatal(line)
+		}
+	}
+}
+
+func TestDashboardEmptyViewportEverySmallHeight(t *testing.T) {
+	for h := 1; h <= 12; h++ {
+		m := NewModel()
+		m.Width = 20
+		m.Height = h
+		if len(strings.Split(m.View(), "\n")) > h {
+			t.Fatalf("height %d: %q", h, m.View())
+		}
+	}
+}
 
 func dashboardFixture(t *testing.T) (Model, *store.Store) {
 	t.Helper()
@@ -31,7 +158,7 @@ func dashboardFixture(t *testing.T) (Model, *store.Store) {
 	done := make(chan error, 1)
 	go func() {
 		defer right.Close()
-		done <- server.NewHandler(s).Serve(context.Background(), right, right)
+		done <- server.NewHandlerWithRunner(s, dashboardRunner{}).Serve(context.Background(), right, right)
 	}()
 	remote := client.NewRemote(left)
 	t.Cleanup(func() { remote.Close(); <-done; s.Close() })

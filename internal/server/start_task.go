@@ -43,16 +43,42 @@ func (h *Handler) startTask(ctx context.Context, message protocol.Message) (prot
 	if h.isolate {
 		runner = agent.NewIsolatedRunner(h.store, message.TaskID, runner)
 	}
-	if err := h.runtime.Start(ctx, message.TaskID, specs, runner); err != nil {
+	h.jobsMu.Lock()
+	if h.closed {
+		h.jobsMu.Unlock()
+		return protocol.Message{}, fmt.Errorf("task supervisor is closed")
+	}
+	run, err := h.runtime.Prepare(ctx, message.TaskID, specs, runner)
+	if err != nil {
+		h.jobsMu.Unlock()
 		return protocol.Message{}, err
 	}
+	runCtx, cancel := context.WithCancel(ctx)
+	if h.cancels == nil {
+		h.cancels = make(map[string]context.CancelFunc)
+	}
+	h.cancels[message.TaskID] = cancel
+	h.jobs.Add(1)
+	h.jobsMu.Unlock()
+	go func() {
+		defer h.jobs.Done()
+		defer cancel()
+		// Runtime persists completion, failure or cancellation before returning.
+		err := run(runCtx)
+		h.jobsMu.Lock()
+		if err != nil {
+			h.jobErrors = append(h.jobErrors, fmt.Errorf("task %s: %w", message.TaskID, err))
+		}
+		delete(h.cancels, message.TaskID)
+		h.jobsMu.Unlock()
+	}()
 	event := domain.EventEnvelope{
 		WorkspaceID: message.WorkspaceID,
 		TaskID:      message.TaskID,
 		AgentID:     "system",
 		Sequence:    1,
 		Type:        domain.EventTaskUpdated,
-		Payload:     []byte("completed"),
+		Payload:     []byte("running"),
 	}
 	return protocol.Message{Type: protocol.MessageEvent, WorkspaceID: message.WorkspaceID, TaskID: message.TaskID, Event: &event}, nil
 }

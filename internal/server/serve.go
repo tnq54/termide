@@ -9,7 +9,8 @@ import (
 
 // Serve handles framed requests until EOF. The caller owns stream cancellation
 // and must close the transport when its context is cancelled.
-func (h *Handler) Serve(ctx context.Context, input io.Reader, output io.Writer) error {
+func (h *Handler) Serve(ctx context.Context, input io.Reader, output io.Writer) (serveErr error) {
+	defer func() { serveErr = errors.Join(serveErr, h.Close()) }()
 	for {
 		if err := ctx.Err(); err != nil {
 			return err

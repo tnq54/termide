@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 
 	"termide/internal/agent"
 	"termide/internal/domain"
@@ -11,10 +13,29 @@ import (
 )
 
 type Handler struct {
-	store   *store.Store
-	runtime *agent.TaskRuntime
-	runner  agent.Runner
-	isolate bool
+	store     *store.Store
+	runtime   *agent.TaskRuntime
+	runner    agent.Runner
+	isolate   bool
+	jobsMu    sync.Mutex
+	jobs      sync.WaitGroup
+	cancels   map[string]context.CancelFunc
+	closed    bool
+	jobErrors []error
+}
+
+// Close cancels owned jobs and waits for final statuses before the store closes.
+func (h *Handler) Close() error {
+	h.jobsMu.Lock()
+	h.closed = true
+	for _, cancel := range h.cancels {
+		cancel()
+	}
+	h.jobsMu.Unlock()
+	h.jobs.Wait()
+	h.jobsMu.Lock()
+	defer h.jobsMu.Unlock()
+	return errors.Join(h.jobErrors...)
 }
 
 func NewHandler(s *store.Store) *Handler { return &Handler{store: s, runtime: agent.NewTaskRuntime(s)} }
@@ -46,6 +67,8 @@ func (h *Handler) Handle(ctx context.Context, message protocol.Message) (protoco
 		return h.openWorkspace(ctx, message)
 	case protocol.MessageStartTask:
 		return h.startTask(ctx, message)
+	case protocol.MessageCancel:
+		return h.cancelTask(ctx, message)
 	case protocol.MessageCreateTask:
 		if message.WorkspaceID == "" || message.TaskID == "" {
 			return protocol.Message{}, fmt.Errorf("workspace and task IDs are required")

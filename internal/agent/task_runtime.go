@@ -32,25 +32,41 @@ func (r *TaskRuntime) Create(ctx context.Context, task domain.Task, specs []Spec
 }
 
 func (r *TaskRuntime) Start(ctx context.Context, taskID string, specs []Spec, runner Runner) error {
+	run, err := r.Prepare(ctx, taskID, specs, runner)
+	if err != nil {
+		return err
+	}
+	return run(ctx)
+}
+
+// Prepare claims the task synchronously. The returned operation must be run
+// exactly once, including when its execution context has already been cancelled.
+func (r *TaskRuntime) Prepare(ctx context.Context, taskID string, specs []Spec, runner Runner) (func(context.Context) error, error) {
 	if runner == nil || len(specs) == 0 {
-		return fmt.Errorf("runner and nonempty plan required")
+		return nil, fmt.Errorf("runner and nonempty plan required")
 	}
 	agents := make([]domain.Agent, 0, len(specs))
 	seen := map[string]bool{}
 	for _, spec := range specs {
 		if spec.ID == "" || seen[spec.ID] {
-			return fmt.Errorf("agent IDs must be nonempty and unique")
+			return nil, fmt.Errorf("agent IDs must be nonempty and unique")
 		}
 		seen[spec.ID] = true
 		agents = append(agents, domain.Agent{ID: spec.ID, TaskID: taskID, Role: spec.Role})
 	}
 	task, err := r.store.GetTask(ctx, taskID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := r.store.BeginTask(ctx, taskID, agents); err != nil {
-		return err
+		return nil, err
 	}
+	specs = append([]Spec(nil), specs...)
+	return func(runCtx context.Context) error { return r.runPrepared(runCtx, task, specs, runner) }, nil
+}
+
+func (r *TaskRuntime) runPrepared(ctx context.Context, task domain.Task, specs []Spec, runner Runner) error {
+	taskID := task.ID
 	wrapped := &persistedRunner{store: r.store, runner: runner, task: task}
 	runErr := NewScheduler(wrapped, 4).Run(ctx, specs, func(Event) {})
 	status := domain.TaskCompleted

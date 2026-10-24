@@ -34,6 +34,7 @@ func (r *OpenCodeRunner) Run(ctx context.Context, spec Spec, emit func(Event)) e
 	dir := cmd.Dir
 	cmd = exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
 	cmd.Dir = dir
+	configureProcessCancellation(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -42,13 +43,27 @@ func (r *OpenCodeRunner) Run(ctx context.Context, spec Spec, emit func(Event)) e
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	defer stdout.Close()
+	// Descendants may inherit stdout even after the leader exits. Closing the
+	// read end on cancellation bounds Scan independently of child cooperation.
+	closed := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = cmd.Cancel()
+		_ = stdout.Close()
+		close(closed)
+	})
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 4096), 1024*1024)
 	for scanner.Scan() {
 		emit(Event{AgentID: spec.ID, Kind: "output", Output: Redact(scanner.Text(), nil)})
 	}
 	if scanner.Err() != nil {
-		cmd.Process.Kill()
+		_ = cmd.Cancel()
 	}
-	return errors.Join(scanner.Err(), cmd.Wait())
+	// Join the cancellation callback before Wait reaps the leader, so its PID
+	// cannot be reused before a late process-group signal.
+	if !stop() {
+		<-closed
+	}
+	return errors.Join(scanner.Err(), cmd.Wait(), ctx.Err())
 }

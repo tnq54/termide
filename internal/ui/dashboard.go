@@ -4,23 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/google/uuid"
 	"termide/internal/domain"
 	"termide/internal/protocol"
 )
 
 type dashboardState struct {
-	tasks       []domain.Task
-	selected    int
-	before      int64
-	snapshot    *domain.TaskSnapshot
-	logs        []string
-	busy        bool
-	loadingMore bool
+	tasks        []domain.Task
+	selected     int
+	before       int64
+	snapshot     *domain.TaskSnapshot
+	logs         []string
+	busy         bool
+	loadingMore  bool
+	detailOffset int
 }
 
 type dashboardResult struct {
@@ -28,15 +30,12 @@ type dashboardResult struct {
 	page     domain.TaskPage
 	snapshot domain.TaskSnapshot
 	err      error
-	started  bool
+	before   int64
 }
 
 func (m Model) dashboardCommand(kind protocol.MessageType, taskID string, before int64, after uint64) tea.Cmd {
 	return func() tea.Msg {
 		timeout := 15 * time.Second
-		if kind == protocol.MessageStartTask {
-			timeout = 24 * time.Hour
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		var payload []byte
@@ -45,7 +44,10 @@ func (m Model) dashboardCommand(kind protocol.MessageType, taskID string, before
 		case protocol.MessageListTasks:
 			payload, err = json.Marshal(protocol.TaskPageRequest{Before: before})
 		case protocol.MessageStartTask:
-			payload, err = json.Marshal([]map[string]string{{"id": "agent-1", "role": "coder", "command": "implement task"}})
+			if m.dashboard.snapshot == nil || m.dashboard.snapshot.Task.ID != taskID {
+				return dashboardResult{kind: kind, err: fmt.Errorf("task detail is not loaded")}
+			}
+			payload, err = json.Marshal([]map[string]string{{"id": uuid.NewString(), "role": "coder", "command": m.dashboard.snapshot.Task.Description}})
 		}
 		if err != nil {
 			return dashboardResult{kind: kind, err: err}
@@ -57,28 +59,77 @@ func (m Model) dashboardCommand(kind protocol.MessageType, taskID string, before
 		if err != nil {
 			return dashboardResult{kind: kind, err: err}
 		}
-		result := dashboardResult{kind: kind}
+		result := dashboardResult{kind: kind, before: before}
+		if response.WorkspaceID != m.workspace.ID {
+			result.err = fmt.Errorf("dashboard workspace mismatch")
+			return result
+		}
 		if kind == protocol.MessageListTasks {
 			if response.Type != protocol.MessageTaskPage {
 				result.err = fmt.Errorf("unexpected task page response")
 			} else {
 				result.err = json.Unmarshal(response.Payload, &result.page)
+				if result.err == nil {
+					seen := map[string]bool{}
+					for _, task := range result.page.Tasks {
+						if task.ID == "" || seen[task.ID] || task.WorkspaceID != m.workspace.ID {
+							result.err = fmt.Errorf("invalid task page identity")
+							break
+						}
+						seen[task.ID] = true
+					}
+					if result.page.Next < 0 || (before > 0 && result.page.Next >= before) || (result.page.Next != 0 && len(result.page.Tasks) == 0) {
+						result.err = fmt.Errorf("invalid task page cursor")
+					}
+				}
+			}
+		} else if kind == protocol.MessageCancel {
+			if response.Type != protocol.MessageTaskCancelRequested || response.TaskID != taskID {
+				result.err = fmt.Errorf("unexpected task cancel response")
 			}
 		} else if kind == protocol.MessageStartTask {
-			if response.Type != protocol.MessageEvent || response.TaskID != taskID {
+			if response.Type != protocol.MessageEvent || response.TaskID != taskID || response.Event == nil || response.Event.TaskID != taskID || response.Event.WorkspaceID != m.workspace.ID || response.Event.Type != domain.EventTaskUpdated {
 				result.err = fmt.Errorf("unexpected task start response")
 			} else {
-				result.started = true
+				result.err = response.Event.Validate()
 			}
 		} else {
 			if response.Type != protocol.MessageTaskDetail || response.TaskID != taskID {
 				result.err = fmt.Errorf("unexpected task detail response")
 			} else {
 				result.err = json.Unmarshal(response.Payload, &result.snapshot)
+				if result.err == nil {
+					result.err = validateDashboardSnapshot(result.snapshot, m.workspace.ID, taskID, after)
+				}
 			}
 		}
 		return result
 	}
+}
+
+func validateDashboardSnapshot(s domain.TaskSnapshot, workspaceID, taskID string, after uint64) error {
+	if s.Task.ID != taskID || s.Task.WorkspaceID != workspaceID {
+		return fmt.Errorf("snapshot task identity mismatch")
+	}
+	for _, a := range s.Agents {
+		if a.ID == "" || a.TaskID != taskID {
+			return fmt.Errorf("snapshot agent identity mismatch")
+		}
+	}
+	sequence := after
+	for _, e := range s.Events {
+		if e.WorkspaceID != workspaceID || e.TaskID != taskID || e.Sequence <= sequence {
+			return fmt.Errorf("snapshot event identity or sequence mismatch")
+		}
+		if err := e.Validate(); err != nil {
+			return err
+		}
+		sequence = e.Sequence
+	}
+	if s.NextSequence != sequence || (s.More && len(s.Events) == 0) {
+		return fmt.Errorf("snapshot cursor does not match events")
+	}
+	return nil
 }
 
 func (m Model) receiveDashboard(result dashboardResult) (tea.Model, tea.Cmd) {
@@ -89,13 +140,17 @@ func (m Model) receiveDashboard(result dashboardResult) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch result.kind {
-	case protocol.MessageStartTask:
-		m.Status = "task started"
+	case protocol.MessageStartTask, protocol.MessageCancel:
+		m.Status = "loading task result"
+		if result.kind == protocol.MessageCancel {
+			m.Status = "cancellation requested; loading task status"
+		}
 		if m.dashboard.snapshot != nil {
-			m.dashboard.snapshot.Task.Status = domain.TaskRunning
+			m.dashboard.busy = true
+			return m, m.dashboardCommand(protocol.MessageTaskSnapshot, m.dashboard.snapshot.Task.ID, 0, m.dashboard.snapshot.NextSequence)
 		}
 	case protocol.MessageListTasks:
-		if m.dashboard.before == 0 {
+		if result.before == 0 {
 			m.dashboard.tasks = append([]domain.Task(nil), result.page.Tasks...)
 		} else {
 			m.dashboard.tasks = append(m.dashboard.tasks, result.page.Tasks...)
@@ -109,6 +164,11 @@ func (m Model) receiveDashboard(result dashboardResult) (tea.Model, tea.Cmd) {
 		m.Status = "task history loaded"
 	case protocol.MessageTaskSnapshot:
 		m.dashboard.snapshot = &result.snapshot
+		for i := range m.dashboard.tasks {
+			if m.dashboard.tasks[i].ID == result.snapshot.Task.ID {
+				m.dashboard.tasks[i] = result.snapshot.Task
+			}
+		}
 		m.dashboard.logs = append(m.dashboard.logs, snapshotLogLines(result.snapshot.Events)...)
 		m.Status = "task detail loaded"
 	}
@@ -135,11 +195,28 @@ func snapshotLogLines(events []domain.EventEnvelope) []string {
 }
 
 func (m Model) dashboardKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+	needsRemote := key.String() == "r" || key.String() == "l" || key.String() == "s" || key.String() == "c" || key.Type == tea.KeyEnter
+	if needsRemote && (m.remote == nil || !m.ready) {
+		m.Status = "remote workspace is not connected"
+		return m, nil
+	}
 	if m.dashboard.busy {
 		return m, nil
 	}
 	if m.dashboard.snapshot != nil {
 		switch key.Type {
+		case tea.KeyUp:
+			m.dashboard.detailOffset = max(0, m.dashboard.detailOffset-1)
+		case tea.KeyDown:
+			m.dashboard.detailOffset = min(m.detailMaxOffset(), m.dashboard.detailOffset+1)
+		case tea.KeyPgUp:
+			m.dashboard.detailOffset = max(0, m.dashboard.detailOffset-m.dashboardRows())
+		case tea.KeyPgDown:
+			m.dashboard.detailOffset = min(m.detailMaxOffset(), m.dashboard.detailOffset+m.dashboardRows())
+		case tea.KeyHome:
+			m.dashboard.detailOffset = 0
+		case tea.KeyEnd:
+			m.dashboard.detailOffset = m.detailMaxOffset()
 		case tea.KeyEsc, tea.KeyBackspace:
 			m.dashboard.snapshot = nil
 			m.dashboard.logs = nil
@@ -147,6 +224,11 @@ func (m Model) dashboardKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Status = "task history loaded"
 			return m, nil
 		case tea.KeyRunes:
+			if string(key.Runes) == "c" && cancellableTask(m.dashboard.snapshot.Task.Status) {
+				m.dashboard.busy = true
+				m.Status = "requesting task cancellation"
+				return m, m.dashboardCommand(protocol.MessageCancel, m.dashboard.snapshot.Task.ID, 0, 0)
+			}
 			if string(key.Runes) == "s" && m.dashboard.snapshot.Task.Status == domain.TaskQueued {
 				m.dashboard.busy = true
 				m.Status = "starting task"
@@ -181,13 +263,13 @@ func (m Model) dashboardKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.dashboard.busy = true
 		m.dashboard.logs = nil
 		m.Panel = PanelAgents
+		m.dashboard.detailOffset = 0
 		m.Status = "loading task detail"
 		return m, m.dashboardCommand(protocol.MessageTaskSnapshot, task.ID, 0, 0)
 	case tea.KeyRunes:
 		switch string(key.Runes) {
 		case "r":
 			m.dashboard.busy = true
-			m.dashboard.before = 0
 			m.Status = "refreshing task history"
 			return m, m.dashboardCommand(protocol.MessageListTasks, "", 0, 0)
 		case "l":
@@ -223,31 +305,40 @@ func (m Model) dashboardView() string {
 		height = 18
 	}
 	lines := []string{"Task dashboard"}
+	var body []string
+	help := "Enter details | r refresh | l more"
 	if m.dashboard.snapshot != nil {
 		s := m.dashboard.snapshot
-		lines = append(lines, "Task: "+safeLabel(s.Task.Description), "Status: "+safeLabel(string(s.Task.Status)), "Agents:")
+		body = append(body, "Task: "+safeLabel(s.Task.Description), "Status: "+safeLabel(string(s.Task.Status)), "Agents:")
 		for _, agent := range s.Agents {
-			lines = append(lines, "- "+safeLabel(agent.Role)+" / "+safeLabel(string(agent.Status)))
+			body = append(body, "- "+safeLabel(agent.Role)+" / "+safeLabel(string(agent.Status)))
 		}
-		lines = append(lines, "Logs:")
-		lines = append(lines, m.dashboard.logs...)
-		lines = append(lines, "s start queued | r refresh | Esc back")
+		body = append(body, "Logs:")
+		body = append(body, m.dashboard.logs...)
+		start := min(m.dashboard.detailOffset, max(0, len(body)-m.dashboardRows()))
+		body = body[start:min(len(body), start+m.dashboardRows())]
+		help = "c cancel | r refresh | Esc back"
 	} else {
 		if len(m.dashboard.tasks) == 0 {
-			lines = append(lines, "(no tasks)")
+			body = append(body, "(no tasks)")
 		}
-		for i, task := range m.dashboard.tasks {
+		start := max(0, m.dashboard.selected-m.dashboardRows()+1)
+		for i := start; i < len(m.dashboard.tasks) && i < start+m.dashboardRows(); i++ {
+			task := m.dashboard.tasks[i]
 			prefix := "  "
 			if i == m.dashboard.selected {
 				prefix = "> "
 			}
-			lines = append(lines, prefix+safeLabel(task.Description)+" ["+safeLabel(string(task.Status))+"]")
+			body = append(body, prefix+safeLabel(task.Description)+" ["+safeLabel(string(task.Status))+"]")
 		}
-		lines = append(lines, "↑/↓ select | Enter details | r refresh | l more | e editor")
 	}
-	lines = append(lines, safeLabel(m.Status))
-	if len(lines) > height {
-		lines = lines[:height]
+	if height == 1 {
+		lines = []string{safeLabel(m.Status)}
+	} else if height == 2 {
+		lines = append(lines, safeLabel(m.Status))
+	} else {
+		lines = append(lines, body[:min(len(body), m.dashboardRows())]...)
+		lines = append(lines, help, safeLabel(m.Status))
 	}
 	for i, line := range lines {
 		lines[i] = truncateSafe(line, width)
@@ -259,7 +350,23 @@ func truncateSafe(value string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	return string([]rune(value)[:min(len([]rune(value)), width)])
+	return ansi.Truncate(safeLabel(value), width, "")
 }
 
-func formatCursor(value int64) string { return strconv.FormatInt(value, 10) }
+func (m Model) dashboardRows() int {
+	h := m.Height
+	if h < 1 {
+		h = 18
+	}
+	return max(0, h-3)
+}
+
+func cancellableTask(status domain.TaskStatus) bool {
+	return status == domain.TaskRunning || status == domain.TaskPlanning || status == domain.TaskWaitingApproval || status == domain.TaskBlocked
+}
+func (m Model) detailMaxOffset() int {
+	if m.dashboard.snapshot == nil {
+		return 0
+	}
+	return max(0, 4+len(m.dashboard.snapshot.Agents)+len(m.dashboard.logs)-m.dashboardRows())
+}
