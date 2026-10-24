@@ -1,0 +1,4 @@
+// Top-level build file. Versions are pinned for reproducible builds.
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}

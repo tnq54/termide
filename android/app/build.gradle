@@ -1,0 +1,39 @@
+plugins {
+    id 'com.android.application'
+}
+
+def termuxHost = project.findProperty('termideHost') ?: 'vps'
+def termuxProject = project.findProperty('termideProject') ?: '/home/ubuntu/termux'
+
+android {
+    namespace 'dev.termide.launcher'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'dev.termide.launcher'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+        buildConfigField 'String', 'TERMIDE_HOST', "\"${termuxHost}\""
+        buildConfigField 'String', 'TERMIDE_PROJECT', "\"${termuxProject}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

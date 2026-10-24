@@ -63,6 +63,17 @@ the process-tree limitation documented above still applies.
   failures reported inline.
 - [x] Full suite, race, vet and cross-builds passed.
 
+## LSP hover + launcher APK
+
+- [x] RED→GREEN: JSON-RPC conn (call/dispatch/notification), client lifecycle
+  với fake server e2e, daemon-scoped LSPManager, protocol + handler + TUI
+  hover popup (Ctrl+K).
+- [x] APK launcher thật: build `assembleDebug` thành công, `aapt dump badging`
+  và `apksigner verify` pass (`dev.termide.launcher`, quyền RUN_COMMAND).
+- [x] APK mỏng có chủ ý (mở Termux qua Termux:Task); runtime chưa test trên
+  thiết bị thật; terminal emulator riêng ngoài scope.
+- [x] Full suite, race, vet, cross-builds passed.
+
 ## True server-push + PTY streaming
 
 - [x] RED→GREEN: `subscribe_stream` trả replay bù rồi push event mới qua
