@@ -50,13 +50,19 @@ func SSHCommand(ctx context.Context, host string) (*exec.Cmd, error) {
 }
 
 func DialSSH(ctx context.Context, host string) (*Remote, error) {
-	cmd, err := SSHCommand(ctx, host)
-	if err != nil {
-		return nil, err
-	}
-	stream, err := StartProcess(cmd)
+	stream, err := DialSSHStream(ctx, host)
 	if err != nil {
 		return nil, err
 	}
 	return NewRemote(stream), nil
+}
+
+// DialSSHStream opens a raw framed-transport stream to termide-server. Use it
+// for push-mode subscriptions that must not share the interactive Remote.
+func DialSSHStream(ctx context.Context, host string) (io.ReadWriteCloser, error) {
+	cmd, err := SSHCommand(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	return StartProcess(cmd)
 }
