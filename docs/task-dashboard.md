@@ -68,6 +68,8 @@ biết và hiển thị lỗi. Giới hạn dừng process con OpenCode nêu tr�
 
 Client có thể dùng helper typed `Remote.Subscribe` (hoặc request `subscribe`)
 với `AfterSequence` để lấy replay event đã lưu trong SQLite theo đúng workspace.
+Sau khi workspace mở lại, nếu dashboard còn task detail trong model, TUI tự replay
+các event sau cursor hiện tại và bổ sung log mà không tự thay đổi task status.
 Client kiểm tra response type, workspace identity, event identity, sequence tăng
 nghiêm ngặt và giới hạn 10.000 event / 2 MiB; server áp dụng cùng giới hạn trước
 khi serialize. Đây là reconnect/replay một lần, chưa phải live push.

@@ -23,6 +23,8 @@ the process-tree limitation documented above still applies.
 - [x] Typed client `Remote.Subscribe` validates response identity, event identity,
   strictly increasing sequence, and bounded event/payload size.
 - [x] Server bounds replay to 10,000 events and 2 MiB before serialization.
+- [x] Dashboard replays events after workspace reconnect when a task detail and
+  cursor are already present, preserving task status and appending validated logs.
 - [ ] Live push and durable supervisor across reconnect remain future work.
 
 ## Background execution (current behavior)

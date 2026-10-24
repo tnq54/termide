@@ -46,6 +46,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.receiveFile(value)
 	case dashboardResult:
 		return m.receiveDashboard(value)
+	case dashboardReplayResult:
+		return m.receiveDashboardReplay(value)
 	case remoteResult:
 		m.saving = false
 		if value.err != nil {
@@ -56,6 +58,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ready = true
 			m.Status = "connected"
 			if m.remote != nil {
+				if m.dashboard.snapshot != nil {
+					m.dashboard.busy = true
+					m.Status = "replaying task history"
+					return m, m.dashboardReplayCommand()
+				}
 				return m, m.dashboardCommand(protocol.MessageListTasks, "", 0, 0)
 			}
 		} else {
