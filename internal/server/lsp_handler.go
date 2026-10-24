@@ -73,6 +73,20 @@ func (h *Handler) handleLsp(ctx context.Context, message protocol.Message) (prot
 			return protocol.Message{}, err
 		}
 		return protocol.Message{Type: protocol.MessageLspSignatureResult, WorkspaceID: message.WorkspaceID, TaskID: message.TaskID, Payload: payload}, nil
+	case protocol.MessageLspRename:
+		var request protocol.LspRenameRequest
+		if err := json.Unmarshal(message.Payload, &request); err != nil {
+			return protocol.Message{}, fmt.Errorf("invalid lsp request: %w", err)
+		}
+		files, err := h.lsp.Rename(ctx, message.WorkspaceID, workspace.Root, request.Path, request.Line, request.Character, request.NewName)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		payload, err := json.Marshal(protocol.LspRenameResult{Files: files})
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		return protocol.Message{Type: protocol.MessageLspRenameResult, WorkspaceID: message.WorkspaceID, TaskID: message.TaskID, Payload: payload}, nil
 	default:
 		return protocol.Message{}, fmt.Errorf("unsupported message type %q", message.Type)
 	}

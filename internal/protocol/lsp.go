@@ -9,6 +9,8 @@ const (
 	MessageLspCompleteResult    MessageType = "lsp.complete_result"
 	MessageLspSignature         MessageType = "lsp.signature"
 	MessageLspSignatureResult   MessageType = "lsp.signature_result"
+	MessageLspRename            MessageType = "lsp.rename"
+	MessageLspRenameResult      MessageType = "lsp.rename_result"
 )
 
 // LspHoverRequest asks for hover contents at a zero-based line and rune-offset
@@ -83,6 +85,26 @@ type LspSignature struct {
 	Label         string                  `json:"label"`
 	Documentation string                  `json:"documentation"`
 	Parameters    []LspSignatureParameter `json:"parameters"`
+}
+
+// LspRenameRequest asks to rename the symbol at a zero-based line and
+// rune-offset character in a workspace-relative file.
+type LspRenameRequest struct {
+	Path      string `json:"path"`
+	Line      int    `json:"line"`
+	Character int    `json:"character"`
+	NewName   string `json:"new_name"`
+}
+
+// LspRenameFile reports edits applied to one workspace-relative file.
+type LspRenameFile struct {
+	Path  string `json:"path"`
+	Edits int    `json:"edits"`
+}
+
+// LspRenameResult carries per-file edit counts for an applied rename.
+type LspRenameResult struct {
+	Files []LspRenameFile `json:"files"`
 }
 
 // LspSignatureResult carries overloads plus the active indices.

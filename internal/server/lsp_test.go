@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"termide/internal/domain"
+	"termide/internal/lsp"
 	"termide/internal/protocol"
 	"termide/internal/store"
 )
@@ -278,6 +279,115 @@ func TestLspHoverRequiresConfiguredServer(t *testing.T) {
 	raw, _ := json.Marshal(protocol.LspHoverRequest{Path: "x.py", Line: 0, Character: 0})
 	if _, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspHover, WorkspaceID: "w", Payload: raw}); err == nil {
 		t.Fatal("unconfigured server accepted")
+	}
+}
+
+const fakeLspRename = `import json,sys
+def read_msg():
+    length = 0
+    while True:
+        line = sys.stdin.buffer.readline().decode()
+        if not line or line in ("\r\n", "\n"):
+            break
+        if line.lower().startswith("content-length:"):
+            length = int(line.split(":")[1].strip())
+    return json.loads(sys.stdin.buffer.read(length).decode()) if length else None
+def write_msg(obj):
+    data = json.dumps(obj).encode()
+    sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(data) + data)
+    sys.stdout.buffer.flush()
+while True:
+    msg = read_msg()
+    if msg is None:
+        break
+    method = msg.get("method", "")
+    mid = msg.get("id")
+    if method == "initialize":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": {"capabilities": {}}})
+    elif method == "textDocument/rename":
+        uri = msg["params"]["textDocument"]["uri"]
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": {"changes": {uri: [{"range": {"start": {"line": 0, "character": 4}, "end": {"line": 0, "character": 7}}, "newText": "total"}]}}})
+    elif method == "shutdown":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": None})
+    elif method == "exit":
+        break
+`
+
+func TestLspRenameEndToEnd(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	script := filepath.Join(t.TempDir(), "fake-lsp.py")
+	if err := os.WriteFile(script, []byte(fakeLspRename), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateWorkspace(ctx, domain.Workspace{ID: "w", Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "x.py"), []byte("x = sum\ny = 1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(s)
+	defer h.Close()
+	h.lsp = NewLSPManager("python3", []string{script})
+	h.lspOwned = true
+	raw, _ := json.Marshal(protocol.LspRenameRequest{Path: "x.py", Line: 0, Character: 4, NewName: "total"})
+	response, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspRename, WorkspaceID: "w", Payload: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Type != protocol.MessageLspRenameResult {
+		t.Fatalf("response = %#v", response)
+	}
+	var result protocol.LspRenameResult
+	if err := json.Unmarshal(response.Payload, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Files) != 1 || result.Files[0].Path != "x.py" || result.Files[0].Edits != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "x.py"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "x = total\ny = 1\n" {
+		t.Fatalf("file = %q", data)
+	}
+}
+
+func TestLspRenameRejectsBadName(t *testing.T) {
+	h, ctx := lspHandlerFixture(t)
+	raw, _ := json.Marshal(protocol.LspRenameRequest{Path: "x.py", Line: 0, Character: 4, NewName: "not valid"})
+	if _, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspRename, WorkspaceID: "w", Payload: raw}); err == nil {
+		t.Fatal("invalid name accepted")
+	}
+}
+
+func TestLspRenameRejectsEscape(t *testing.T) {
+	h, ctx := lspHandlerFixture(t)
+	raw, _ := json.Marshal(protocol.LspRenameRequest{Path: "../evil.py", Line: 0, Character: 0, NewName: "x"})
+	if _, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspRename, WorkspaceID: "w", Payload: raw}); err == nil {
+		t.Fatal("path escape accepted")
+	}
+}
+
+func TestApplyTextEdits(t *testing.T) {
+	out, err := applyTextEdits("x = sum\ny = 1\n", []lsp.TextEdit{{Start: lsp.Position{Line: 0, Character: 4}, End: lsp.Position{Line: 0, Character: 7}, NewText: "total"}})
+	if err != nil || out != "x = total\ny = 1\n" {
+		t.Fatalf("out = %q, err = %v", out, err)
+	}
+	if _, err := applyTextEdits("ab", []lsp.TextEdit{
+		{Start: lsp.Position{Line: 0, Character: 0}, End: lsp.Position{Line: 0, Character: 2}, NewText: "x"},
+		{Start: lsp.Position{Line: 0, Character: 1}, End: lsp.Position{Line: 0, Character: 2}, NewText: "y"},
+	}); err == nil {
+		t.Fatal("overlapping edits accepted")
+	}
+	if _, err := applyTextEdits("ab", []lsp.TextEdit{{Start: lsp.Position{Line: 5, Character: 0}, End: lsp.Position{Line: 5, Character: 1}, NewText: "x"}}); err == nil {
+		t.Fatal("out-of-range edit accepted")
 	}
 }
 

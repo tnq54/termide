@@ -206,6 +206,192 @@ func (m *LSPManager) SignatureHelp(ctx context.Context, workspaceID, root, rel s
 	return result, nil
 }
 
+// Rename asks the server for a workspace edit and applies it to every
+// affected file inside the workspace. Files are read, validated and written
+// one at a time; a file whose edits fail validation aborts the rename before
+// anything is written.
+func (m *LSPManager) Rename(ctx context.Context, workspaceID, root, rel string, line, character int, newName string) ([]protocol.LspRenameFile, error) {
+	if workspaceID == "" || root == "" {
+		return nil, fmt.Errorf("workspace identity is required")
+	}
+	if !strings.HasSuffix(strings.ToLower(rel), ".py") {
+		return nil, fmt.Errorf("no language server for this file type")
+	}
+	if line < 0 || character < 0 {
+		return nil, fmt.Errorf("line and character must be non-negative")
+	}
+	if !isIdentifier(newName) {
+		return nil, fmt.Errorf("invalid new name %q", newName)
+	}
+	clean, err := checkPathInsideRoot(root, rel)
+	if err != nil {
+		return nil, err
+	}
+	text, err := os.ReadFile(clean)
+	if err != nil {
+		return nil, err
+	}
+	client, err := m.serverFor(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	uri := "file://" + clean
+	if err := client.DidOpen(ctx, uri, "python", string(text)); err != nil {
+		return nil, err
+	}
+	changes, err := client.Rename(ctx, uri, line, character, newName)
+	if err != nil {
+		return nil, err
+	}
+	type pendingFile struct {
+		path string
+		text string
+	}
+	pending := make([]pendingFile, 0, len(changes))
+	files := make([]protocol.LspRenameFile, 0, len(changes))
+	for fileURI, edits := range changes {
+		path, err := uriWorkspaceRel(resolvedRootOf(root), fileURI)
+		if err != nil {
+			return nil, err
+		}
+		original, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		updated, err := applyTextEdits(string(original), edits)
+		if err != nil {
+			return nil, fmt.Errorf("file %s: %w", relOf(root, path), err)
+		}
+		pending = append(pending, pendingFile{path: path, text: updated})
+		files = append(files, protocol.LspRenameFile{Path: relOf(root, path), Edits: len(edits)})
+	}
+	for _, file := range pending {
+		if err := os.WriteFile(file.path, []byte(file.text), 0600); err != nil {
+			return nil, err
+		}
+	}
+	sortRenameFiles(files)
+	return files, nil
+}
+
+func isIdentifier(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		if r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || i > 0 && r >= '0' && r <= '9' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func resolvedRootOf(root string) string {
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return root
+	}
+	return resolved
+}
+
+func relOf(root, path string) string {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return path
+	}
+	return rel
+}
+
+// uriWorkspaceRel maps a file:// URI back into the workspace, rejecting
+// URIs that escape the workspace root.
+func uriWorkspaceRel(resolvedRoot, uri string) (string, error) {
+	const prefix = "file://"
+	if !strings.HasPrefix(uri, prefix) {
+		return "", fmt.Errorf("unsupported uri %q", uri)
+	}
+	clean := filepath.Clean(strings.TrimPrefix(uri, prefix))
+	resolved, err := filepath.EvalSymlinks(clean)
+	if err != nil {
+		parent, perr := filepath.EvalSymlinks(filepath.Dir(clean))
+		if perr != nil {
+			return "", err
+		}
+		resolved = filepath.Join(parent, filepath.Base(clean))
+	}
+	if resolved != resolvedRoot && !strings.HasPrefix(resolved, resolvedRoot+string(os.PathSeparator)) {
+		return "", fmt.Errorf("rename target escapes workspace root")
+	}
+	return resolved, nil
+}
+
+// applyTextEdits splices non-overlapping edits into text. Offsets are rune
+// based; edits are applied from the end of the file backwards so earlier
+// edits never shift later offsets.
+func applyTextEdits(text string, edits []lsp.TextEdit) (string, error) {
+	lines := strings.SplitAfter(text, "\n")
+	starts := make([]int, len(lines)+1)
+	for i, line := range lines {
+		starts[i+1] = starts[i] + len([]rune(line))
+	}
+	type op struct {
+		start, end int
+		newText    string
+	}
+	ops := make([]op, 0, len(edits))
+	for _, edit := range edits {
+		if edit.Start.Line < 0 || edit.End.Line < edit.Start.Line || len(lines) == 0 {
+			return "", fmt.Errorf("edit out of range")
+		}
+		if edit.Start.Line >= len(lines) || edit.End.Line >= len(lines) {
+			return "", fmt.Errorf("edit out of range")
+		}
+		startLen := len([]rune(strings.TrimSuffix(lines[edit.Start.Line], "\n")))
+		endLen := len([]rune(strings.TrimSuffix(lines[edit.End.Line], "\n")))
+		if edit.Start.Character < 0 || edit.Start.Character > startLen {
+			return "", fmt.Errorf("edit out of range")
+		}
+		if edit.End.Character < 0 || edit.End.Character > endLen {
+			return "", fmt.Errorf("edit out of range")
+		}
+		start := starts[edit.Start.Line] + edit.Start.Character
+		end := starts[edit.End.Line] + edit.End.Character
+		if end < start {
+			return "", fmt.Errorf("edit out of range")
+		}
+		ops = append(ops, op{start, end, edit.NewText})
+	}
+	for i := 1; i < len(ops); i++ {
+		j := i
+		for j > 0 && ops[j].start > ops[j-1].start {
+			ops[j], ops[j-1] = ops[j-1], ops[j]
+			j--
+		}
+	}
+	runes := []rune(text)
+	for i, op := range ops {
+		if i > 0 && op.end > ops[i-1].start {
+			return "", fmt.Errorf("overlapping edits")
+		}
+		replacement := []rune(op.newText)
+		kept := append([]rune(nil), runes[:op.start]...)
+		kept = append(kept, replacement...)
+		kept = append(kept, runes[op.end:]...)
+		runes = kept
+	}
+	return string(runes), nil
+}
+
+func sortRenameFiles(files []protocol.LspRenameFile) {
+	for i := 1; i < len(files); i++ {
+		j := i
+		for j > 0 && files[j].Path < files[j-1].Path {
+			files[j], files[j-1] = files[j-1], files[j]
+			j--
+		}
+	}
+}
+
 func checkPathInsideRoot(root, rel string) (string, error) {
 	if rel == "" || filepath.IsAbs(rel) {
 		return "", fmt.Errorf("path must be workspace-relative")
