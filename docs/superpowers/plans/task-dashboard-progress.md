@@ -32,6 +32,21 @@ the process-tree limitation documented above still applies.
   `completed`; reconnect observes final state via snapshot/replay.
 - [ ] Live push remains future work.
 
+## Durable approval gate
+
+- [x] RED→GREEN: approvals persist in SQLite; resolve is single-winner,
+  duplicate and foreign resolutions rejected.
+- [x] RED→GREEN: GateRunner auto-runs safe commands, blocks empty commands,
+  and pauses dangerous specs until approval, resuming or failing without
+  running the command.
+- [x] RED→GREEN: daemon `approve` endpoint validates identity, emits
+  approval events, and denies leftover pendings on cancel/stop.
+- [x] Durable and session runners both gate specs; existing execution tests
+  now use explicit safe commands under the new default-deny semantics.
+- [x] RED→GREEN: dashboard lists pendings, `a`/`d` send decisions, foreign
+  acks are rejected, and snapshot validation covers approval identity.
+- [x] Full suite, race, vet, cross-builds passed.
+
 ## Background execution (current behavior)
 
 - [x] RED→GREEN integration: Start acknowledges before a blocking runner ends;

@@ -11,6 +11,8 @@ Dashboard hoạt động khi client mở workspace từ server có protocol `tas
 | `Home` / `End` | Đầu/cuối nội dung detail đã tải |
 | `s` | Chạy task queued đang mở |
 | `c` | Yêu cầu hủy task đang chạy trong phiên hiện tại |
+| `a` | Duyệt (approve) approval pending đầu tiên của task |
+| `d` | Từ chối (deny) approval pending đầu tiên của task |
 | `Enter` | Mở agent status và event log của task |
 | `r` | Refresh task list, hoặc refresh detail/log incremental |
 | `l` | Tải trang task kế tiếp |
@@ -75,6 +77,26 @@ nghiêm ngặt và giới hạn 10.000 event / 2 MiB; server áp dụng cùng gi
 khi serialize. Đây là reconnect/replay một lần, chưa phải live push.
 
 `r` vẫn là thao tác refresh rõ ràng cho task snapshot.
+
+## Approval gate
+
+Mỗi agent spec được phân loại trước khi chạy với workspace root:
+
+- `Safe` (`git status`, `pytest`, `ls`, ...) chạy ngay không cần duyệt.
+- `Blocked` (command rỗng) bị từ chối, không tạo approval.
+- `ApprovalRequired` (mặc định cho command lạ/nguy hiểm như `rm -rf`,
+  `sudo`, `chmod 777) tạm dừng agent ở trạng thái `waiting_approval` và
+  ghi approval pending vào SQLite.
+
+Client gửi `MessageApprove` với `{id, approved, reason}`; server resolve
+atomic pending→terminal đúng một lần, emit `EventApproval` để replay thấy.
+Approve trùng, task khác workspace, hoặc approval không thuộc task đều bị
+từ chối. Deny khiến agent fail và task failed mà không chạy command.
+Cancel hoặc shutdown trong lúc chờ duyệt tự đánh denied các pending còn lại
+để không kẹt.
+
+Dashboard detail hiển thị mục `Approvals:` khi có pending; snapshot nào cũng
+kèm danh sách pending nên reconnect vẫn thấy. Nhấn `r` để tải pending/log mới.
 
 ## Durable supervisor
 
