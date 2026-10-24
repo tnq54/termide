@@ -53,7 +53,7 @@ func TestClientCodeActionEndToEnd(t *testing.T) {
 	}
 	defer client.Close()
 	uri := "file://" + filepath.Join(root, "x.py")
-	actions, err := client.CodeAction(ctx, uri, 1, 0, 1, 3, nil)
+	actions, err := client.CodeAction(ctx, uri, 1, 0, 1, 3, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestClientCodeActionNullResult(t *testing.T) {
 	}
 	defer client.Close()
 	uri := "file://" + filepath.Join(root, "x.py")
-	actions, err := client.CodeAction(ctx, uri, 0, 0, 0, 1, nil)
+	actions, err := client.CodeAction(ctx, uri, 0, 0, 0, 1, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -92,7 +92,7 @@ func (h *Handler) handleLsp(ctx context.Context, message protocol.Message) (prot
 		if err := json.Unmarshal(message.Payload, &request); err != nil {
 			return protocol.Message{}, fmt.Errorf("invalid lsp request: %w", err)
 		}
-		items, err := h.lsp.CodeAction(ctx, message.WorkspaceID, workspace.Root, request.Path, request.StartLine, request.StartChar, request.EndLine, request.EndChar)
+		items, err := h.lsp.CodeAction(ctx, message.WorkspaceID, workspace.Root, request.Path, request.StartLine, request.StartChar, request.EndLine, request.EndChar, request.Only)
 		if err != nil {
 			return protocol.Message{}, err
 		}

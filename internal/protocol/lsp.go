@@ -119,13 +119,15 @@ type LspSignatureResult struct {
 }
 
 // LspCodeActionRequest asks which fixes/refactors apply to a zero-based line
-// range in a workspace-relative file.
+// range in a workspace-relative file. An empty Only means all kinds;
+// e.g. ["source"] limits to file-level source actions like organizeImports.
 type LspCodeActionRequest struct {
-	Path      string `json:"path"`
-	StartLine int    `json:"start_line"`
-	StartChar int    `json:"start_character"`
-	EndLine   int    `json:"end_line"`
-	EndChar   int    `json:"end_character"`
+	Path      string   `json:"path"`
+	StartLine int      `json:"start_line"`
+	StartChar int      `json:"start_character"`
+	EndLine   int      `json:"end_line"`
+	EndChar   int      `json:"end_character"`
+	Only      []string `json:"only,omitempty"`
 }
 
 // LspCodeActionItem is one applicable action. ID is an opaque server handle

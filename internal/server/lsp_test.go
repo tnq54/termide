@@ -530,6 +530,77 @@ func TestLspCodeActionApplyRejectsForeignWorkspace(t *testing.T) {
 	}
 }
 
+const fakeLspOnlyFilter = `import json,sys
+def read_msg():
+    length = 0
+    while True:
+        line = sys.stdin.buffer.readline().decode()
+        if not line or line in ("\r\n", "\n"):
+            break
+        if line.lower().startswith("content-length:"):
+            length = int(line.split(":")[1].strip())
+    return json.loads(sys.stdin.buffer.read(length).decode()) if length else None
+def write_msg(obj):
+    data = json.dumps(obj).encode()
+    sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(data) + data)
+    sys.stdout.buffer.flush()
+while True:
+    msg = read_msg()
+    if msg is None:
+        break
+    method = msg.get("method", "")
+    mid = msg.get("id")
+    if method == "initialize":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": {"capabilities": {}}})
+    elif method == "textDocument/codeAction":
+        only = (msg.get("params") or {}).get("context", {}).get("only", [])
+        uri = msg["params"]["textDocument"]["uri"]
+        if only == ["source"]:
+            write_msg({"jsonrpc": "2.0", "id": mid, "result": [{"title": "Organize imports", "kind": "source.organizeImports", "edit": {"changes": {uri: [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 2, "character": 0}}, "newText": "import a\nimport b\n"}]}}}]})
+        else:
+            write_msg({"jsonrpc": "2.0", "id": mid, "result": [{"title": "Add missing import", "kind": "quickfix", "edit": {"changes": {uri: [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}}, "newText": "import os\n"}]}}}]})
+    elif method == "shutdown":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": None})
+    elif method == "exit":
+        break
+`
+
+func TestLspCodeActionForwardsOnlyFilter(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	script := filepath.Join(t.TempDir(), "fake-lsp.py")
+	if err := os.WriteFile(script, []byte(fakeLspOnlyFilter), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateWorkspace(ctx, domain.Workspace{ID: "w", Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "x.py"), []byte("import b\nimport a\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(s)
+	defer h.Close()
+	h.lsp = NewLSPManager("python3", []string{script})
+	h.lspOwned = true
+	raw, _ := json.Marshal(protocol.LspCodeActionRequest{Path: "x.py", Only: []string{"source"}})
+	response, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspCodeAction, WorkspaceID: "w", Payload: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result protocol.LspCodeActionList
+	if err := json.Unmarshal(response.Payload, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Actions) != 1 || result.Actions[0].Kind != "source.organizeImports" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestLspCodeActionRejectsNonPython(t *testing.T) {
 	h, ctx := lspHandlerFixture(t)
 	raw, _ := json.Marshal(protocol.LspCodeActionRequest{Path: "x.go", StartLine: 0, StartChar: 0, EndLine: 0, EndChar: 0})

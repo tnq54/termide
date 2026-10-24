@@ -477,7 +477,7 @@ func (r rawCodeAction) toAction() CodeAction {
 // CodeAction asks for fixes/refactors covering a zero-based line range.
 // Command-only actions (no edits) are kept with empty Edits; the caller
 // decides whether they are applicable.
-func (c *Client) CodeAction(ctx context.Context, uri string, startLine, startChar, endLine, endChar int, diagnostics []Diagnostic) ([]CodeAction, error) {
+func (c *Client) CodeAction(ctx context.Context, uri string, startLine, startChar, endLine, endChar int, diagnostics []Diagnostic, only []string) ([]CodeAction, error) {
 	conn, err := c.connFor()
 	if err != nil {
 		return nil, err
@@ -487,6 +487,9 @@ func (c *Client) CodeAction(ctx context.Context, uri string, startLine, startCha
 		contextParam = map[string]any{"diagnostics": []any{}}
 	} else {
 		contextParam = map[string]any{"diagnostics": diagnostics}
+	}
+	if len(only) > 0 {
+		contextParam["only"] = only
 	}
 	raw, err := conn.Call(ctx, "textDocument/codeAction", map[string]any{
 		"textDocument": map[string]any{"uri": uri},

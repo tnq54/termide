@@ -39,7 +39,8 @@ func NewLSPManager(binary string, args []string) *LSPManager {
 // CodeAction lists applicable fixes/refactors for a line range. Only actions
 // carrying edits are returned; command-only actions cannot be applied
 // headlessly and are dropped. Each listed action gets a single-use ID.
-func (m *LSPManager) CodeAction(ctx context.Context, workspaceID, root, rel string, startLine, startChar, endLine, endChar int) ([]protocol.LspCodeActionItem, error) {
+// A non-empty only restricts to the given action kinds (e.g. ["source"]).
+func (m *LSPManager) CodeAction(ctx context.Context, workspaceID, root, rel string, startLine, startChar, endLine, endChar int, only []string) ([]protocol.LspCodeActionItem, error) {
 	if workspaceID == "" || root == "" {
 		return nil, fmt.Errorf("workspace identity is required")
 	}
@@ -65,7 +66,7 @@ func (m *LSPManager) CodeAction(ctx context.Context, workspaceID, root, rel stri
 	if err := client.DidOpen(ctx, uri, "python", string(text)); err != nil {
 		return nil, err
 	}
-	actions, err := client.CodeAction(ctx, uri, startLine, startChar, endLine, endChar, client.Diagnostics(uri))
+	actions, err := client.CodeAction(ctx, uri, startLine, startChar, endLine, endChar, client.Diagnostics(uri), only)
 	if err != nil {
 		return nil, err
 	}
