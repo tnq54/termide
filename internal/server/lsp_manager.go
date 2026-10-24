@@ -420,9 +420,33 @@ func uriWorkspaceRel(resolvedRoot, uri string) (string, error) {
 	return resolved, nil
 }
 
-// applyTextEdits splices non-overlapping edits into text. Offsets are rune
-// based; edits are applied from the end of the file backwards so earlier
-// edits never shift later offsets.
+// lspLineRuneOffset converts an LSP UTF-16 character position to a rune
+// offset, excluding line terminators. Reject split surrogate pairs rather
+// than applying a destructive edit at an ambiguous position.
+func lspLineRuneOffset(line string, character int) (int, error) {
+	line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
+	units, offset := 0, 0
+	for _, r := range line {
+		if units == character {
+			return offset, nil
+		}
+		units++
+		if r > 0xffff {
+			units++
+		}
+		offset++
+		if units > character {
+			return 0, fmt.Errorf("edit out of range or splits UTF-16 surrogate pair")
+		}
+	}
+	if units != character {
+		return 0, fmt.Errorf("edit out of range")
+	}
+	return offset, nil
+}
+
+// applyTextEdits converts LSP UTF-16 positions into rune offsets and splices
+// non-overlapping edits from the end backwards, retaining original offsets.
 func applyTextEdits(text string, edits []lsp.TextEdit) (string, error) {
 	lines := strings.SplitAfter(text, "\n")
 	starts := make([]int, len(lines)+1)
@@ -441,16 +465,16 @@ func applyTextEdits(text string, edits []lsp.TextEdit) (string, error) {
 		if edit.Start.Line >= len(lines) || edit.End.Line >= len(lines) {
 			return "", fmt.Errorf("edit out of range")
 		}
-		startLen := len([]rune(strings.TrimSuffix(lines[edit.Start.Line], "\n")))
-		endLen := len([]rune(strings.TrimSuffix(lines[edit.End.Line], "\n")))
-		if edit.Start.Character < 0 || edit.Start.Character > startLen {
-			return "", fmt.Errorf("edit out of range")
+		startOffset, err := lspLineRuneOffset(lines[edit.Start.Line], edit.Start.Character)
+		if err != nil {
+			return "", err
 		}
-		if edit.End.Character < 0 || edit.End.Character > endLen {
-			return "", fmt.Errorf("edit out of range")
+		endOffset, err := lspLineRuneOffset(lines[edit.End.Line], edit.End.Character)
+		if err != nil {
+			return "", err
 		}
-		start := starts[edit.Start.Line] + edit.Start.Character
-		end := starts[edit.End.Line] + edit.End.Character
+		start := starts[edit.Start.Line] + startOffset
+		end := starts[edit.End.Line] + endOffset
 		if end < start {
 			return "", fmt.Errorf("edit out of range")
 		}

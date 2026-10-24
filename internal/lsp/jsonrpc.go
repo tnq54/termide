@@ -26,6 +26,8 @@ func Write(w io.Writer, message Message) error {
 	return err
 }
 
+// Read decodes one frame. For a stream of frames, callers must pass the same
+// *bufio.Reader on every call so bytes read ahead remain available.
 func Read(r io.Reader) (Message, error) {
 	header := bufio.NewReader(r)
 	length := 0

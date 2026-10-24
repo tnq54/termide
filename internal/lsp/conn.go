@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -34,12 +35,13 @@ type Notification Message
 type NotifyFunc func(method string, params json.RawMessage)
 
 // Conn multiplexes JSON-RPC over one framed stream: Call matches responses
-// by ID while the read loop dispatches notifications. Not safe for concurrent
-// writes from multiple goroutines beyond Call's internal lock.
+// by ID while the read loop dispatches notifications. Calls and notifications
+// may be sent concurrently; each complete frame is written under writeMu.
 type Conn struct {
 	stream  io.ReadWriteCloser
 	notify  NotifyFunc
 	mu      sync.Mutex
+	writeMu sync.Mutex
 	next    atomic.Int64
 	pending map[string]chan Message
 	closed  chan struct{}
@@ -86,7 +88,7 @@ func (c *Conn) Call(ctx context.Context, method string, params any) (json.RawMes
 		delete(c.pending, key)
 		c.mu.Unlock()
 	}()
-	if err := Write(c.stream, Message{JSONRPC: "2.0", ID: id, Method: method, Params: payload}); err != nil {
+	if err := c.write(Message{JSONRPC: "2.0", ID: id, Method: method, Params: payload}); err != nil {
 		return nil, err
 	}
 	select {
@@ -111,13 +113,20 @@ func (c *Conn) Notify(method string, params any) error {
 		}
 		payload = raw
 	}
-	return Write(c.stream, Message{JSONRPC: "2.0", Method: method, Params: payload})
+	return c.write(Message{JSONRPC: "2.0", Method: method, Params: payload})
+}
+
+func (c *Conn) write(message Message) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return Write(c.stream, message)
 }
 
 func (c *Conn) readLoop() {
 	defer c.Close()
+	reader := bufio.NewReader(c.stream)
 	for {
-		message, err := Read(c.stream)
+		message, err := Read(reader)
 		if err != nil {
 			return
 		}
