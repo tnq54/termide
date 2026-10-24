@@ -63,6 +63,14 @@ the process-tree limitation documented above still applies.
   failures reported inline.
 - [x] Full suite, race, vet and cross-builds passed.
 
+## LSP source action
+
+- [x] RED→GREEN: `only` filter đi qua client → server; fake server phân biệt
+  source/quickfix.
+- [x] RED→GREEN: `Ctrl+F` chạy source action toàn file qua cùng luồng popup/
+  apply/reload như code action.
+- [x] Full suite, race, vet, cross-builds passed.
+
 ## LSP code action
 
 - [x] RED→GREEN: client `CodeAction` parse `changes` map, null rỗng.

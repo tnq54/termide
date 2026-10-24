@@ -355,6 +355,16 @@ func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			line, col := m.files.input.CursorLineCol()
 			return m, m.completeCommand(m.files.document.Path, line, col)
+		case tea.KeyCtrlF:
+			if m.remote == nil || !m.ready || m.files.busy {
+				return m, nil
+			}
+			m.closeCompletion()
+			m.sigHelp = nil
+			m.hover = ""
+			m.renaming = false
+			m.renameBuf = ""
+			return m, m.sourceActionCommand(m.files.document.Path)
 		case tea.KeyCtrlX:
 			if m.remote == nil || !m.ready || m.files.busy {
 				return m, nil

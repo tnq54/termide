@@ -22,7 +22,26 @@ type codeActionAppliedResult struct {
 }
 
 func (m Model) codeActionCommand(path string, startLine, startChar, endLine, endChar int) tea.Cmd {
-	payload, err := json.Marshal(protocol.LspCodeActionRequest{Path: path, StartLine: startLine, StartChar: startChar, EndLine: endLine, EndChar: endChar})
+	return m.codeActionCommandFiltered(path, startLine, startChar, endLine, endChar, nil)
+}
+
+// sourceActionCommand requests file-level source actions over the whole
+// buffer, reused for the Ctrl+F "fix file" shortcut.
+func (m Model) sourceActionCommand(path string) tea.Cmd {
+	endLine := 0
+	endChar := 0
+	if text := m.files.input.Value(); text != "" {
+		lines := strings.Split(text, "\n")
+		endLine = len(lines) - 1
+		if endLine >= 0 && endLine < len(lines) {
+			endChar = len([]rune(lines[endLine]))
+		}
+	}
+	return m.codeActionCommandFiltered(path, 0, 0, endLine, endChar, []string{"source"})
+}
+
+func (m Model) codeActionCommandFiltered(path string, startLine, startChar, endLine, endChar int, only []string) tea.Cmd {
+	payload, err := json.Marshal(protocol.LspCodeActionRequest{Path: path, StartLine: startLine, StartChar: startChar, EndLine: endLine, EndChar: endChar, Only: only})
 	if err != nil {
 		return func() tea.Msg { return codeActionListResult{err: err} }
 	}
