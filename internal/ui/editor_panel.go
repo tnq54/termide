@@ -207,6 +207,10 @@ func (m Model) receiveFile(result fileResult) (tea.Model, tea.Cmd) {
 		m.files.undo = nil
 		m.files.redo = nil
 		m.Status = "file opened"
+		if m.renameNotice != "" {
+			m.Status = m.renameNotice
+			m.renameNotice = ""
+		}
 		return m, tea.Batch(m.files.input.Focus(), m.diagnosticsCommand(m.files.document.Path))
 	case protocol.MessageSaveFile:
 		// Save acknowledges a snapshot. Edits made during the request remain dirty.
@@ -221,6 +225,45 @@ func (m Model) receiveFile(result fileResult) (tea.Model, tea.Cmd) {
 
 func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.files.document != nil {
+		if m.renaming {
+			switch key.Type {
+			case tea.KeyEsc:
+				m.renaming = false
+				m.renameBuf = ""
+				m.Status = "rename cancelled"
+				return m, nil
+			case tea.KeyEnter:
+				buf := m.renameBuf
+				m.renaming = false
+				m.renameBuf = ""
+				if m.remote == nil || !m.ready {
+					m.Status = "remote workspace is not connected"
+					return m, nil
+				}
+				line, col := m.files.input.CursorLineCol()
+				return m, m.renameCommand(m.files.document.Path, line, col, buf)
+			case tea.KeyBackspace, tea.KeyCtrlH:
+				runes := []rune(m.renameBuf)
+				if len(runes) > 0 {
+					m.renameBuf = string(runes[:len(runes)-1])
+				}
+				m.Status = renamePrompt(m.renameBuf)
+				return m, nil
+			case tea.KeyRunes:
+				m.renameBuf += string(key.Runes)
+				m.Status = renamePrompt(m.renameBuf)
+				return m, nil
+			case tea.KeySpace:
+				m.renameBuf += " "
+				m.Status = renamePrompt(m.renameBuf)
+				return m, nil
+			default:
+				m.renaming = false
+				m.renameBuf = ""
+				m.Status = "rename cancelled"
+				return m, nil
+			}
+		}
 		if m.completing() {
 			switch key.Type {
 			case tea.KeyUp:
@@ -290,6 +333,17 @@ func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			line, col := m.files.input.CursorLineCol()
 			return m, m.completeCommand(m.files.document.Path, line, col)
+		case tea.KeyCtrlR:
+			if m.remote == nil || !m.ready || m.files.busy {
+				return m, nil
+			}
+			m.closeCompletion()
+			m.sigHelp = nil
+			m.hover = ""
+			m.renaming = true
+			m.renameBuf = ""
+			m.Status = renamePrompt("")
+			return m, nil
 		case tea.KeyCtrlO:
 			if m.remote == nil || !m.ready || m.files.busy {
 				return m, nil

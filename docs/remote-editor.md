@@ -23,6 +23,7 @@ Khi trạng thái là `connected`:
 | Ctrl+N / Ctrl+P trong editor | Tab kế tiếp / tab trước (vòng tròn) |
 | Ctrl+J trong editor | Gợi ý hoàn thành từ LSP tại con trỏ (Up/Down chọn, Enter chèn, Esc đóng) |
 | Ctrl+O trong editor, hoặc tự động khi gõ `(` `,` | Signature help (overloads, tham số đang nhập; Up/Down chuyển overload, Esc đóng) |
+| Ctrl+R trong editor | Đổi tên symbol tại con trỏ (gõ tên mới, Enter áp dụng, Esc hủy) |
 | Ctrl+K trong editor | Hover LSP tại cursor (file `.py`, cần `--lsp-python` ở server) |
 
 Trong editor các chữ `q`, `a`, `e` là nội dung, không phải phím điều hướng.
@@ -54,7 +55,8 @@ Save đang bay để giữ đúng mapping xác nhận.
   language server, ví dụ `pylsp`); file khác báo "no language server for this
   file type": hover (`Ctrl+K`), problems tự động, completion (`Ctrl+J`, tối đa
   20 gợi ý), signature help (tự động khi gõ `(` `,` hoặc `Ctrl+O`, tối đa
-  5 overload). Chưa có rename hay code action.
+  5 overload), rename (`Ctrl+R`, áp dụng server-side cho mọi file trong
+  workspace, tự tải lại buffer sạch). Chưa có code action.
 - Chưa có syntax highlighting, tạo/xóa file hay clipboard hệ điều hành.
 
 Sau lỗi kết nối, chưa có tự reconnect; giữ/copy nội dung chưa lưu trước khi đóng client.

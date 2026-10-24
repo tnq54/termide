@@ -63,6 +63,16 @@ the process-tree limitation documented above still applies.
   failures reported inline.
 - [x] Full suite, race, vet and cross-builds passed.
 
+## LSP rename
+
+- [x] RED→GREEN: client `Rename` parse changes-map, từ chối documentChanges;
+  null rỗng.
+- [x] RED→GREEN: server áp dụng edits nhiều file (validate range, chống overlap,
+  từ chối escape/non-py/tên không hợp lệ), báo số edit từng file.
+- [x] RED→GREEN: TUI prompt inline (`Ctrl+R`, Esc hủy), submit, tự tải lại
+  buffer sạch, giữ buffer dirty và cảnh báo.
+- [x] Full suite, race (ui/editor/server/lsp), vet, cross-builds passed.
+
 ## LSP signature help
 
 - [x] RED→GREEN: client `SignatureHelp` parse markup/string/offset-labels,

@@ -48,6 +48,9 @@ type Model struct {
 	sigHelp         *protocol.LspSignatureResult
 	sigSel          int
 	sigAutoOff      bool
+	renaming        bool
+	renameBuf       string
+	renameNotice    string
 }
 
 func NewModel() Model {
@@ -70,6 +73,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.receiveHover(value)
 	case completeResult:
 		return m.receiveComplete(value)
+	case renameResult:
+		return m.receiveRename(value)
 	case signatureResult:
 		return m.receiveSignature(value)
 	case diagnosticsResult:
