@@ -63,6 +63,15 @@ the process-tree limitation documented above still applies.
   failures reported inline.
 - [x] Full suite, race, vet and cross-builds passed.
 
+## LSP signature help
+
+- [x] RED→GREEN: client `SignatureHelp` parse markup/string/offset-labels,
+  null result rỗng.
+- [x] RED→GREEN: protocol + server `lsp.signature` end-to-end qua fake server.
+- [x] RED→GREEN: TUI popup (tự động khi gõ `(`/`,`, thủ công `Ctrl+O`),
+  Up/Down chuyển overload, Esc/`)` đóng, auto-suppress khi backend lỗi.
+- [x] Full suite, race (ui/editor/server/lsp), vet, cross-builds passed.
+
 ## LSP completion
 
 - [x] RED→GREEN: client `Complete` parse cả hai dạng response (object/array),

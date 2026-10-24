@@ -241,6 +241,112 @@ func (m Model) renderCompletion(lines []string, width int) []string {
 	return append(out, lines[1:]...)
 }
 
+type signatureResult struct {
+	help *protocol.LspSignatureResult
+	err  error
+}
+
+func (m Model) signatureCommand(path string, line, character int) tea.Cmd {
+	payload, err := json.Marshal(protocol.LspSignatureRequest{Path: path, Line: line, Character: character})
+	if err != nil {
+		return func() tea.Msg { return signatureResult{err: err} }
+	}
+	return func() tea.Msg {
+		timeout := 15 * time.Second
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		response, err := m.remote.Call(ctx, protocol.Message{Type: protocol.MessageLspSignature, WorkspaceID: m.workspace.ID, Payload: payload})
+		if err != nil {
+			return signatureResult{err: err}
+		}
+		if response.Type != protocol.MessageLspSignatureResult || response.WorkspaceID != m.workspace.ID {
+			return signatureResult{err: fmt.Errorf("unexpected signature response")}
+		}
+		var result protocol.LspSignatureResult
+		if err := json.Unmarshal(response.Payload, &result); err != nil {
+			return signatureResult{err: err}
+		}
+		return signatureResult{help: &result}
+	}
+}
+
+// maybeAutoSignature fires a signature request after trigger characters,
+// suppressing repeat noise when the backend previously failed.
+func (m Model) maybeAutoSignature() tea.Cmd {
+	if m.remote == nil || !m.ready || m.files.busy || m.files.document == nil || m.sigAutoOff {
+		return nil
+	}
+	if !strings.HasSuffix(strings.ToLower(m.files.document.Path), ".py") {
+		return nil
+	}
+	line, col := m.files.input.CursorLineCol()
+	return m.signatureCommand(m.files.document.Path, line, col)
+}
+
+func (m Model) receiveSignature(result signatureResult) (tea.Model, tea.Cmd) {
+	if result.err != nil {
+		m.Status = result.err.Error()
+		m.sigAutoOff = true
+		return m, nil
+	}
+	if result.help == nil || len(result.help.Signatures) == 0 {
+		m.Status = "no signatures"
+		return m, nil
+	}
+	m.sigHelp = result.help
+	m.sigSel = result.help.ActiveSignature
+	if m.sigSel < 0 || m.sigSel >= len(m.sigHelp.Signatures) {
+		m.sigSel = 0
+	}
+	m.sigAutoOff = false
+	return m, nil
+}
+
+func (m Model) renderSignature(lines []string, width int) []string {
+	if m.sigHelp == nil || len(lines) == 0 {
+		return lines
+	}
+	out := make([]string, 0, len(lines)+8)
+	out = append(out, lines[0])
+	out = append(out, "--- signature (Esc) ---")
+	shown := m.sigHelp.Signatures
+	if len(shown) > 5 {
+		shown = shown[:5]
+	}
+	for i, sig := range shown {
+		marker := "  "
+		if i == m.sigSel {
+			marker = "> "
+		}
+		label := strings.TrimSpace(safeLabel(sig.Label))
+		if width > 2 && len(label) > width-2 {
+			label = label[:width-2]
+		}
+		out = append(out, marker+label)
+		if doc := strings.TrimSpace(safeLabel(sig.Documentation)); doc != "" {
+			if idx := strings.Index(doc, "\n"); idx >= 0 {
+				doc = doc[:idx]
+			}
+			if width > 5 && len(doc) > width-5 {
+				doc = doc[:width-5]
+			}
+			out = append(out, "   "+doc)
+		}
+		params := make([]string, 0, len(sig.Parameters))
+		for j, param := range sig.Parameters {
+			name := strings.TrimSpace(safeLabel(param.Label))
+			if j == m.sigHelp.ActiveParameter && i == m.sigSel {
+				name = "[" + name + "]"
+			}
+			params = append(params, name)
+		}
+		if len(params) > 0 {
+			out = append(out, "   params: "+strings.Join(params, ", "))
+		}
+	}
+	return append(out, lines[1:]...)
+}
+
 // renderHover appends a popup box after the first body line.
 func renderHover(lines []string, text string, width int) []string {
 	if strings.TrimSpace(text) == "" || len(lines) == 0 {

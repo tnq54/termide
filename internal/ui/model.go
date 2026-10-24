@@ -45,6 +45,9 @@ type Model struct {
 	diags           []string
 	completeItems   []protocol.LspCompleteItem
 	completeSel     int
+	sigHelp         *protocol.LspSignatureResult
+	sigSel          int
+	sigAutoOff      bool
 }
 
 func NewModel() Model {
@@ -67,6 +70,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.receiveHover(value)
 	case completeResult:
 		return m.receiveComplete(value)
+	case signatureResult:
+		return m.receiveSignature(value)
 	case diagnosticsResult:
 		return m.receiveDiagnostics(value)
 	case termOpenedResult:

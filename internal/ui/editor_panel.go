@@ -239,6 +239,29 @@ func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.closeCompletion()
 			}
 		}
+		if m.sigHelp != nil {
+			switch key.Type {
+			case tea.KeyUp:
+				if len(m.sigHelp.Signatures) > 0 {
+					m.sigSel = (m.sigSel + len(m.sigHelp.Signatures) - 1) % len(m.sigHelp.Signatures)
+				}
+				return m, nil
+			case tea.KeyDown:
+				if len(m.sigHelp.Signatures) > 0 {
+					m.sigSel = (m.sigSel + 1) % len(m.sigHelp.Signatures)
+				}
+				return m, nil
+			case tea.KeyEsc:
+				m.sigHelp = nil
+				return m, nil
+			case tea.KeyRunes:
+				if len(key.Runes) == 1 && key.Runes[0] == ')' {
+					m.sigHelp = nil
+				}
+			default:
+				m.sigHelp = nil
+			}
+		}
 		switch key.Type {
 		case tea.KeyEsc:
 			if m.hover != "" {
@@ -267,6 +290,13 @@ func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			line, col := m.files.input.CursorLineCol()
 			return m, m.completeCommand(m.files.document.Path, line, col)
+		case tea.KeyCtrlO:
+			if m.remote == nil || !m.ready || m.files.busy {
+				return m, nil
+			}
+			m.sigAutoOff = false
+			line, col := m.files.input.CursorLineCol()
+			return m, m.signatureCommand(m.files.document.Path, line, col)
 		case tea.KeyCtrlG:
 			if m.files.busy {
 				return m, nil
@@ -320,6 +350,9 @@ func (m Model) editorKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.files.redo = nil
 			if len(m.files.undo) > 50 {
 				m.files.undo = m.files.undo[1:]
+			}
+			if key.Type == tea.KeyRunes && len(key.Runes) == 1 && (key.Runes[0] == '(' || key.Runes[0] == ',') {
+				return m, m.maybeAutoSignature()
 			}
 		}
 		return m, cmd
@@ -398,6 +431,7 @@ func (m Model) editorView() string {
 		lines = append(lines, strings.Split(m.files.input.View(), "\n")...)
 		lines = renderHover(lines, m.hover, width)
 		lines = m.renderCompletion(lines, width)
+		lines = m.renderSignature(lines, width)
 		lines = renderProblems(lines, m.diags, width)
 		lines = append(lines, "Ctrl+S save | Esc files | Ctrl+N/P tabs | Ctrl+K hover", "Ctrl+Z/Y undo/redo | Ctrl+G discard")
 	} else {
