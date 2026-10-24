@@ -31,7 +31,7 @@ func TestControlRoundTripStartAndCancel(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- ServeControl(ctx, right, sup) }()
 	defer func() { left.Close(); <-done; close(runner.done); _ = sup.Close(context.Background()) }()
-	if err := protocol.Write(left, protocol.Message{Type: protocol.MessageStartTask, WorkspaceID: "w", TaskID: "t", Payload: []byte(`[ {"id":"a","role":"coder"} ]`)}); err != nil {
+	if err := protocol.Write(left, protocol.Message{Type: protocol.MessageStartTask, WorkspaceID: "w", TaskID: "t", Payload: []byte(`[ {"id":"a","role":"coder","command":"git status"} ]`)}); err != nil {
 		t.Fatal(err)
 	}
 	response, err := protocol.Read(left)

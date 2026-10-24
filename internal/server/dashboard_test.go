@@ -41,7 +41,7 @@ func TestDashboardCanStartQueuedTaskAndRefreshStatus(t *testing.T) {
 	s.CreateWorkspace(ctx, domain.Workspace{ID: "w", Root: t.TempDir()})
 	s.CreateTask(ctx, domain.Task{ID: "t", WorkspaceID: "w", Description: "run", Status: domain.TaskQueued})
 	h := NewHandlerWithRunner(s, dashboardRunner{})
-	payload, _ := json.Marshal([]agent.Spec{{ID: "a", Role: "coder", Command: "test"}})
+	payload, _ := json.Marshal([]agent.Spec{{ID: "a", Role: "coder", Command: "git status"}})
 	response, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageStartTask, WorkspaceID: "w", TaskID: "t", Payload: payload})
 	if err != nil {
 		t.Fatal(err)

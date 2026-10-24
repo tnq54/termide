@@ -13,3 +13,10 @@ const (
 type TaskPageRequest struct {
 	Before int64 `json:"before"`
 }
+
+// ApproveDecision carries a durable approval resolution from the client.
+type ApproveDecision struct {
+	ID       string `json:"id"`
+	Approved bool   `json:"approved"`
+	Reason   string `json:"reason,omitempty"`
+}

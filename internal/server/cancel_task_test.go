@@ -37,7 +37,7 @@ func TestCancelTaskThroughTransportScopesAndPersists(t *testing.T) {
 	t.Cleanup(func() { remote.Close(); <-done })
 	deadline, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	plan, _ := json.Marshal([]agent.Spec{{ID: "a", Role: "coder"}})
+	plan, _ := json.Marshal([]agent.Spec{{ID: "a", Role: "coder", Command: "git status"}})
 	if _, err := remote.Call(deadline, protocol.Message{Type: protocol.MessageStartTask, TaskID: "t", WorkspaceID: "w", Payload: plan}); err != nil {
 		t.Fatal(err)
 	}

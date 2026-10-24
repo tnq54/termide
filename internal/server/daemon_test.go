@@ -46,7 +46,7 @@ func TestDaemonTaskSurvivesSessionClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := protocol.Write(session, protocol.Message{Type: protocol.MessageStartTask, RequestID: "1", WorkspaceID: "w", TaskID: "t", Payload: []byte(`[{"id":"a","role":"coder"}]`)}); err != nil {
+	if err := protocol.Write(session, protocol.Message{Type: protocol.MessageStartTask, RequestID: "1", WorkspaceID: "w", TaskID: "t", Payload: []byte(`[{"id":"a","role":"coder","command":"git status"}]`)}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := protocol.Read(session); err != nil {
@@ -107,7 +107,7 @@ func TestDaemonShutdownLeavesInflightTaskRunning(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if err := protocol.Write(session, protocol.Message{Type: protocol.MessageStartTask, RequestID: "1", WorkspaceID: "w", TaskID: "t", Payload: []byte(`[{"id":"a","role":"coder"}]`)}); err != nil {
+	if err := protocol.Write(session, protocol.Message{Type: protocol.MessageStartTask, RequestID: "1", WorkspaceID: "w", TaskID: "t", Payload: []byte(`[{"id":"a","role":"coder","command":"git status"}]`)}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := protocol.Read(session); err != nil {

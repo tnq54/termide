@@ -17,6 +17,7 @@ import (
 const (
 	supervisorLeaseTTL      = time.Minute
 	supervisorRenewInterval = 20 * time.Second
+	gatePollInterval        = 500 * time.Millisecond
 )
 
 type Supervisor struct {
@@ -69,6 +70,10 @@ func (s *Supervisor) Start(ctx context.Context, workspaceID, taskID string, spec
 	if err != nil {
 		return store.TaskRun{}, err
 	}
+	workspace, err := s.store.GetWorkspace(ctx, workspaceID)
+	if err != nil {
+		return store.TaskRun{}, err
+	}
 	run, err := s.store.ClaimTaskRun(ctx, taskID, plan, s.owner, time.Now().Add(supervisorLeaseTTL))
 	if err != nil {
 		return store.TaskRun{}, err
@@ -83,11 +88,11 @@ func (s *Supervisor) Start(ctx context.Context, workspaceID, taskID string, spec
 			return store.TaskRun{}, err
 		}
 	}
-	s.launch(run, specs)
+	s.launch(run, specs, agent.NewGateRunner(s.store, s.runner, taskID, workspace.Root, gatePollInterval))
 	return run, nil
 }
 
-func (s *Supervisor) launch(run store.TaskRun, specs []agent.Spec) {
+func (s *Supervisor) launch(run store.TaskRun, specs []agent.Spec, runner agent.Runner) {
 	runCtx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
 	if s.closed {
@@ -98,16 +103,16 @@ func (s *Supervisor) launch(run store.TaskRun, specs []agent.Spec) {
 	s.jobs[run.TaskID] = cancel
 	s.wg.Add(1)
 	s.mu.Unlock()
-	go s.execute(runCtx, run, specs)
+	go s.execute(runCtx, run, specs, runner)
 }
 
-func (s *Supervisor) execute(ctx context.Context, run store.TaskRun, specs []agent.Spec) {
+func (s *Supervisor) execute(ctx context.Context, run store.TaskRun, specs []agent.Spec, runner agent.Runner) {
 	defer s.wg.Done()
 	defer func() { s.mu.Lock(); delete(s.jobs, run.TaskID); s.mu.Unlock() }()
 	renewStop := make(chan struct{})
 	go s.renewLoop(ctx, run, renewStop)
 	defer close(renewStop)
-	runErr := agent.NewScheduler(&durablePersistedRunner{store: s.store, runner: s.runner, taskID: run.TaskID}, 4).Run(ctx, specs, func(agent.Event) {})
+	runErr := agent.NewScheduler(&durablePersistedRunner{store: s.store, runner: runner, taskID: run.TaskID}, 4).Run(ctx, specs, func(agent.Event) {})
 	s.finish(ctx, run, runErr)
 }
 
@@ -140,6 +145,9 @@ func (s *Supervisor) finish(ctx context.Context, run store.TaskRun, runErr error
 	var persistErr error
 	if ctx.Err() != nil {
 		persistErr = errors.Join(persistErr, s.store.CancelQueuedAgents(finalCtx, run.TaskID))
+		for _, approval := range pendingApprovals(finalCtx, s.store, run.TaskID) {
+			persistErr = errors.Join(persistErr, s.store.ResolveApproval(finalCtx, approval.ID, false, "task stopped"))
+		}
 	}
 	persistErr = errors.Join(persistErr,
 		s.store.UpdateTaskStatus(finalCtx, run.TaskID, status),
@@ -186,9 +194,39 @@ func (s *Supervisor) Recover(ctx context.Context) ([]store.TaskRun, error) {
 			s.mu.Unlock()
 			continue
 		}
-		s.launch(run, specs)
+		task, err := s.store.GetTask(ctx, run.TaskID)
+		if err != nil {
+			finalCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = s.store.UpdateTaskStatus(finalCtx, run.TaskID, domain.TaskFailed)
+			_ = s.store.FinishTaskRun(finalCtx, run.RunID, domain.TaskFailed, err.Error())
+			cancel()
+			s.mu.Lock()
+			s.errs = append(s.errs, fmt.Errorf("task %s: %w", run.TaskID, err))
+			s.mu.Unlock()
+			continue
+		}
+		workspace, err := s.store.GetWorkspace(ctx, task.WorkspaceID)
+		if err != nil {
+			finalCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = s.store.UpdateTaskStatus(finalCtx, run.TaskID, domain.TaskFailed)
+			_ = s.store.FinishTaskRun(finalCtx, run.RunID, domain.TaskFailed, err.Error())
+			cancel()
+			s.mu.Lock()
+			s.errs = append(s.errs, fmt.Errorf("task %s: %w", run.TaskID, err))
+			s.mu.Unlock()
+			continue
+		}
+		s.launch(run, specs, agent.NewGateRunner(s.store, s.runner, run.TaskID, workspace.Root, gatePollInterval))
 	}
 	return runs, nil
+}
+
+func pendingApprovals(ctx context.Context, s *store.Store, taskID string) []domain.ApprovalRequest {
+	pending, err := s.ListPendingApprovals(ctx, taskID)
+	if err != nil {
+		return nil
+	}
+	return pending
 }
 
 func errorString(err error) string {
@@ -208,6 +246,9 @@ func (s *Supervisor) Cancel(ctx context.Context, workspaceID, taskID string) err
 	}
 	if err := s.store.RequestTaskCancel(ctx, taskID); err != nil {
 		return err
+	}
+	for _, approval := range pendingApprovals(ctx, s.store, taskID) {
+		_ = s.store.ResolveApproval(ctx, approval.ID, false, "task cancelled")
 	}
 	s.mu.Lock()
 	if cancel := s.jobs[taskID]; cancel != nil {

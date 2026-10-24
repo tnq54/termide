@@ -63,7 +63,7 @@ func TestSupervisorPersistsOutputEvents(t *testing.T) {
 	defer s.Close()
 	mustWorkspaceTask(t, s, "w", "t", "")
 	sup := NewSupervisor(s, &emittingRunner{text: "hello-agent"}, "owner")
-	if _, err := sup.Start(ctx, "w", "t", []agent.Spec{{ID: "a", Role: "coder"}}); err != nil {
+	if _, err := sup.Start(ctx, "w", "t", []agent.Spec{{ID: "a", Role: "coder", Command: "git status"}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := sup.Wait(ctx); err != nil {
@@ -102,7 +102,7 @@ func TestSupervisorStartRejectsDuplicateAndForeignAgentIDs(t *testing.T) {
 	if _, err := s.GetTaskRun(ctx, "t1"); err == nil {
 		t.Fatal("failed start left a run record")
 	}
-	if _, err := sup.Start(ctx, "w", "t1", []agent.Spec{{ID: "shared", Role: "coder"}}); err != nil {
+	if _, err := sup.Start(ctx, "w", "t1", []agent.Spec{{ID: "shared", Role: "coder", Command: "git status"}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := sup.Wait(ctx); err != nil {
@@ -130,7 +130,7 @@ func TestSupervisorRecoversExpiredRun(t *testing.T) {
 	mustWorkspaceTask(t, s, "w", "t", "")
 	runner := &durableRunner{started: make(chan struct{}), done: make(chan struct{})}
 	old := NewSupervisor(s, runner, "old-owner")
-	if _, err := old.Start(ctx, "w", "t", []agent.Spec{{ID: "a", Role: "coder"}}); err != nil {
+	if _, err := old.Start(ctx, "w", "t", []agent.Spec{{ID: "a", Role: "coder", Command: "git status"}}); err != nil {
 		t.Fatal(err)
 	}
 	// Simulate a crashed owner: expire its lease while the run is in-flight.

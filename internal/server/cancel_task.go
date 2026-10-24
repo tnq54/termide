@@ -33,6 +33,7 @@ func (h *Handler) cancelTask(ctx context.Context, message protocol.Message) (pro
 		return protocol.Message{}, fmt.Errorf("task is not running in this server session")
 	}
 	cancel()
+	h.denyPendingApprovals(context.Background(), message.TaskID, "task cancelled")
 	// Runtime owns final status persistence. An acknowledgement must not claim
 	// cancellation has completed while the process is still shutting down.
 	return protocol.Message{Type: protocol.MessageTaskCancelRequested, WorkspaceID: message.WorkspaceID, TaskID: message.TaskID}, nil

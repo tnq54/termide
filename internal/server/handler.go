@@ -29,11 +29,16 @@ type Handler struct {
 func (h *Handler) Close() error {
 	h.jobsMu.Lock()
 	h.closed = true
-	for _, cancel := range h.cancels {
+	var tasks []string
+	for taskID, cancel := range h.cancels {
+		tasks = append(tasks, taskID)
 		cancel()
 	}
 	h.jobsMu.Unlock()
 	h.jobs.Wait()
+	for _, taskID := range tasks {
+		h.denyPendingApprovals(context.Background(), taskID, "task stopped")
+	}
 	h.jobsMu.Lock()
 	defer h.jobsMu.Unlock()
 	return errors.Join(h.jobErrors...)
@@ -72,6 +77,8 @@ func (h *Handler) Handle(ctx context.Context, message protocol.Message) (protoco
 		return h.startTask(ctx, message)
 	case protocol.MessageCancel:
 		return h.cancelTask(ctx, message)
+	case protocol.MessageApprove:
+		return h.approve(ctx, message)
 	case protocol.MessageCreateTask:
 		if message.WorkspaceID == "" || message.TaskID == "" {
 			return protocol.Message{}, fmt.Errorf("workspace and task IDs are required")

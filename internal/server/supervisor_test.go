@@ -43,7 +43,7 @@ func TestSupervisorOutlivesRequestContext(t *testing.T) {
 	runner := &durableRunner{started: make(chan struct{}), done: make(chan struct{})}
 	sup := NewSupervisor(s, runner, "owner")
 	requestCtx, cancel := context.WithCancel(ctx)
-	if _, err := sup.Start(requestCtx, "w", "t", []agent.Spec{{ID: "a", Role: "coder"}}); err != nil {
+	if _, err := sup.Start(requestCtx, "w", "t", []agent.Spec{{ID: "a", Role: "coder", Command: "git status"}}); err != nil {
 		t.Fatal(err)
 	}
 	cancel()

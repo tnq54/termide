@@ -26,7 +26,7 @@ func TestDurableHandlerUsesSupervisorAfterSessionContextEnds(t *testing.T) {
 	sup := NewSupervisor(s, runner, "owner")
 	h := NewDurableHandler(s, sup)
 	reqCtx, cancel := context.WithCancel(ctx)
-	plan := []byte(`[{"id":"a","role":"coder"}]`)
+	plan := []byte(`[{"id":"a","role":"coder","command":"git status"}]`)
 	response, err := h.Handle(reqCtx, protocol.Message{Type: protocol.MessageStartTask, WorkspaceID: "w", TaskID: "t", Payload: plan})
 	if err != nil || response.Type != protocol.MessageEvent {
 		t.Fatal(response, err)

@@ -36,7 +36,7 @@ func TestBackgroundFinalizationErrorIsReportedOnClose(t *testing.T) {
 	s.CreateWorkspace(ctx, domain.Workspace{ID: "w"})
 	s.CreateTask(ctx, domain.Task{ID: "t", WorkspaceID: "w", Status: domain.TaskQueued})
 	h := NewHandlerWithRunner(s, closeStoreRunner{s})
-	payload, _ := json.Marshal([]agent.Spec{{ID: "a"}})
+	payload, _ := json.Marshal([]agent.Spec{{ID: "a", Command: "git status"}})
 	if _, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageStartTask, WorkspaceID: "w", TaskID: "t", Payload: payload}); err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestBackgroundStartLeavesTransportUsableAndCancelsOnDisconnect(t *testing.T
 	})
 	callCtx, stop := context.WithTimeout(ctx, time.Second)
 	defer stop()
-	payload, _ := json.Marshal([]agent.Spec{{ID: "a", Role: "coder"}})
+	payload, _ := json.Marshal([]agent.Spec{{ID: "a", Role: "coder", Command: "git status"}})
 	request := protocol.Message{Type: protocol.MessageStartTask, WorkspaceID: "w", TaskID: "t", Payload: payload}
 	if _, err := remote.Call(callCtx, request); err != nil {
 		t.Fatalf("start blocked behind runner: %v", err)

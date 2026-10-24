@@ -150,7 +150,7 @@ func dashboardFixture(t *testing.T) (Model, *store.Store) {
 	}
 	workspace := domain.Workspace{ID: "w", Root: t.TempDir()}
 	s.CreateWorkspace(context.Background(), workspace)
-	s.CreateTask(context.Background(), domain.Task{ID: "task-a", WorkspaceID: "w", Description: "sửa Python", Status: domain.TaskRunning})
+	s.CreateTask(context.Background(), domain.Task{ID: "task-a", WorkspaceID: "w", Description: "git status", Status: domain.TaskRunning})
 	s.UpsertAgent(context.Background(), domain.Agent{ID: "agent-a", TaskID: "task-a", Role: "coder", Status: domain.AgentRunning})
 	payload, _ := json.Marshal(map[string]string{"Output": "hello từ VPS"})
 	s.AppendEvent(context.Background(), domain.EventEnvelope{WorkspaceID: "w", TaskID: "task-a", AgentID: "agent-a", Type: domain.EventOutput, Payload: payload})
@@ -177,7 +177,7 @@ func dashboardFixture(t *testing.T) (Model, *store.Store) {
 
 func TestDashboardRestoresTaskHistoryAndRefreshesIncrementalLogs(t *testing.T) {
 	m, s := dashboardFixture(t)
-	if len(m.dashboard.tasks) != 1 || !strings.Contains(m.View(), "sửa Python") {
+	if len(m.dashboard.tasks) != 1 || !strings.Contains(m.View(), "git status") {
 		t.Fatal(m.View())
 	}
 	m = applyCommand(t, m, tea.KeyMsg{Type: tea.KeyEnter})

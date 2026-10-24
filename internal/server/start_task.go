@@ -20,7 +20,8 @@ func (h *Handler) startTask(ctx context.Context, message protocol.Message) (prot
 	if h.runner == nil {
 		return protocol.Message{}, fmt.Errorf("task runner is not configured")
 	}
-	if _, err := h.store.GetWorkspace(ctx, message.WorkspaceID); err != nil {
+	workspace, err := h.store.GetWorkspace(ctx, message.WorkspaceID)
+	if err != nil {
 		return protocol.Message{}, err
 	}
 	task, err := h.store.GetTask(ctx, message.TaskID)
@@ -46,6 +47,7 @@ func (h *Handler) startTask(ctx context.Context, message protocol.Message) (prot
 	if h.isolate {
 		runner = agent.NewIsolatedRunner(h.store, message.TaskID, runner)
 	}
+	runner = agent.NewGateRunner(h.store, runner, message.TaskID, workspace.Root, gatePollInterval)
 	h.jobsMu.Lock()
 	if h.closed {
 		h.jobsMu.Unlock()
