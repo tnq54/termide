@@ -225,6 +225,72 @@ func (c *Client) Hover(ctx context.Context, uri string, line, character int) (st
 	return string(wrapper.Contents), nil
 }
 
+// CompletionItem is one completion suggestion with display and insert text.
+type CompletionItem struct {
+	Label  string
+	Kind   int
+	Detail string
+	Insert string
+}
+
+type rawCompletionItem struct {
+	Label      string `json:"label"`
+	Kind       int    `json:"kind"`
+	Detail     string `json:"detail"`
+	InsertText string `json:"insertText"`
+	TextEdit   *struct {
+		NewText string `json:"newText"`
+	} `json:"textEdit"`
+}
+
+func (r rawCompletionItem) toItem() CompletionItem {
+	insert := r.InsertText
+	if insert == "" && r.TextEdit != nil {
+		insert = r.TextEdit.NewText
+	}
+	if insert == "" {
+		insert = r.Label
+	}
+	return CompletionItem{Label: r.Label, Kind: r.Kind, Detail: r.Detail, Insert: insert}
+}
+
+// Complete asks for completions at a zero-based line and rune-offset character.
+func (c *Client) Complete(ctx context.Context, uri string, line, character int) ([]CompletionItem, error) {
+	conn, err := c.connFor()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := conn.Call(ctx, "textDocument/completion", map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+		"position":     map[string]any{"line": line, "character": character},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if string(raw) == "null" || len(raw) == 0 {
+		return nil, nil
+	}
+	var list struct {
+		Items []rawCompletionItem `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, fmt.Errorf("decode completion: %w", err)
+	}
+	rawItems := list.Items
+	if rawItems == nil {
+		var flat []rawCompletionItem
+		if err := json.Unmarshal(raw, &flat); err != nil {
+			return nil, fmt.Errorf("decode completion: %w", err)
+		}
+		rawItems = flat
+	}
+	items := make([]CompletionItem, 0, len(rawItems))
+	for _, rawItem := range rawItems {
+		items = append(items, rawItem.toItem())
+	}
+	return items, nil
+}
+
 // Close shuts the server down gracefully, then kills leftovers.
 func (c *Client) Close() error {
 	c.mu.Lock()
