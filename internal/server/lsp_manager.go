@@ -164,6 +164,48 @@ func (m *LSPManager) Complete(ctx context.Context, workspaceID, root, rel string
 	return out, nil
 }
 
+// SignatureHelp returns overloads for a workspace-relative Python file.
+func (m *LSPManager) SignatureHelp(ctx context.Context, workspaceID, root, rel string, line, character int) (protocol.LspSignatureResult, error) {
+	if workspaceID == "" || root == "" {
+		return protocol.LspSignatureResult{}, fmt.Errorf("workspace identity is required")
+	}
+	if !strings.HasSuffix(strings.ToLower(rel), ".py") {
+		return protocol.LspSignatureResult{}, fmt.Errorf("no language server for this file type")
+	}
+	if line < 0 || character < 0 {
+		return protocol.LspSignatureResult{}, fmt.Errorf("line and character must be non-negative")
+	}
+	clean, err := checkPathInsideRoot(root, rel)
+	if err != nil {
+		return protocol.LspSignatureResult{}, err
+	}
+	text, err := os.ReadFile(clean)
+	if err != nil {
+		return protocol.LspSignatureResult{}, err
+	}
+	client, err := m.serverFor(ctx, root)
+	if err != nil {
+		return protocol.LspSignatureResult{}, err
+	}
+	uri := "file://" + clean
+	if err := client.DidOpen(ctx, uri, "python", string(text)); err != nil {
+		return protocol.LspSignatureResult{}, err
+	}
+	help, err := client.SignatureHelp(ctx, uri, line, character)
+	if err != nil {
+		return protocol.LspSignatureResult{}, err
+	}
+	result := protocol.LspSignatureResult{ActiveSignature: help.ActiveSignature, ActiveParameter: help.ActiveParameter}
+	for _, sig := range help.Signatures {
+		entry := protocol.LspSignature{Label: sig.Label, Documentation: sig.Documentation}
+		for _, param := range sig.Parameters {
+			entry.Parameters = append(entry.Parameters, protocol.LspSignatureParameter{Label: param.Label})
+		}
+		result.Signatures = append(result.Signatures, entry)
+	}
+	return result, nil
+}
+
 func checkPathInsideRoot(root, rel string) (string, error) {
 	if rel == "" || filepath.IsAbs(rel) {
 		return "", fmt.Errorf("path must be workspace-relative")

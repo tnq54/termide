@@ -7,6 +7,8 @@ const (
 	MessageLspDiagnosticsResult MessageType = "lsp.diagnostics_result"
 	MessageLspComplete          MessageType = "lsp.complete"
 	MessageLspCompleteResult    MessageType = "lsp.complete_result"
+	MessageLspSignature         MessageType = "lsp.signature"
+	MessageLspSignatureResult   MessageType = "lsp.signature_result"
 )
 
 // LspHoverRequest asks for hover contents at a zero-based line and rune-offset
@@ -61,4 +63,31 @@ type LspCompleteItem struct {
 // LspCompleteResult carries completion items, possibly empty.
 type LspCompleteResult struct {
 	Items []LspCompleteItem `json:"items"`
+}
+
+// LspSignatureRequest asks for signature help at a zero-based line and
+// rune-offset character in a workspace-relative file.
+type LspSignatureRequest struct {
+	Path      string `json:"path"`
+	Line      int    `json:"line"`
+	Character int    `json:"character"`
+}
+
+// LspSignatureParameter is one parameter label of a signature.
+type LspSignatureParameter struct {
+	Label string `json:"label"`
+}
+
+// LspSignature is one overload rendered for the TUI.
+type LspSignature struct {
+	Label         string                  `json:"label"`
+	Documentation string                  `json:"documentation"`
+	Parameters    []LspSignatureParameter `json:"parameters"`
+}
+
+// LspSignatureResult carries overloads plus the active indices.
+type LspSignatureResult struct {
+	Signatures      []LspSignature `json:"signatures"`
+	ActiveSignature int            `json:"active_signature"`
+	ActiveParameter int            `json:"active_parameter"`
 }

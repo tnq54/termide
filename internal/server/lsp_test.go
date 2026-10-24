@@ -192,6 +192,86 @@ func TestLspCompleteRejectsNonPython(t *testing.T) {
 	}
 }
 
+const fakeLspSignature = `import json,sys
+def read_msg():
+    length = 0
+    while True:
+        line = sys.stdin.buffer.readline().decode()
+        if not line or line in ("\r\n", "\n"):
+            break
+        if line.lower().startswith("content-length:"):
+            length = int(line.split(":")[1].strip())
+    return json.loads(sys.stdin.buffer.read(length).decode()) if length else None
+def write_msg(obj):
+    data = json.dumps(obj).encode()
+    sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(data) + data)
+    sys.stdout.buffer.flush()
+while True:
+    msg = read_msg()
+    if msg is None:
+        break
+    method = msg.get("method", "")
+    mid = msg.get("id")
+    if method == "initialize":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": {"capabilities": {"signatureHelpProvider": {}}}})
+    elif method == "textDocument/signatureHelp":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": {"signatures": [{"label": "len(obj, /)", "documentation": "Return the number of items.", "parameters": [{"label": "obj"}]}], "activeSignature": 0, "activeParameter": 0}})
+    elif method == "shutdown":
+        write_msg({"jsonrpc": "2.0", "id": mid, "result": None})
+    elif method == "exit":
+        break
+`
+
+func TestLspSignatureEndToEnd(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	script := filepath.Join(t.TempDir(), "fake-lsp.py")
+	if err := os.WriteFile(script, []byte(fakeLspSignature), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateWorkspace(ctx, domain.Workspace{ID: "w", Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "x.py"), []byte("x = len("), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(s)
+	defer h.Close()
+	h.lsp = NewLSPManager("python3", []string{script})
+	h.lspOwned = true
+	raw, _ := json.Marshal(protocol.LspSignatureRequest{Path: "x.py", Line: 0, Character: 7})
+	response, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspSignature, WorkspaceID: "w", Payload: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Type != protocol.MessageLspSignatureResult {
+		t.Fatalf("response = %#v", response)
+	}
+	var result protocol.LspSignatureResult
+	if err := json.Unmarshal(response.Payload, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Signatures) != 1 || result.Signatures[0].Label != "len(obj, /)" {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.Signatures[0].Documentation != "Return the number of items." {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestLspSignatureRejectsNonPython(t *testing.T) {
+	h, ctx := lspHandlerFixture(t)
+	raw, _ := json.Marshal(protocol.LspSignatureRequest{Path: "x.go", Line: 0, Character: 0})
+	if _, err := h.Handle(ctx, protocol.Message{Type: protocol.MessageLspSignature, WorkspaceID: "w", Payload: raw}); err == nil {
+		t.Fatal("non-python file accepted")
+	}
+}
+
 func TestLspHoverRequiresConfiguredServer(t *testing.T) {
 	h, ctx := lspHandlerFixture(t)
 	h.lsp = nil

@@ -59,6 +59,20 @@ func (h *Handler) handleLsp(ctx context.Context, message protocol.Message) (prot
 			return protocol.Message{}, err
 		}
 		return protocol.Message{Type: protocol.MessageLspCompleteResult, WorkspaceID: message.WorkspaceID, TaskID: message.TaskID, Payload: payload}, nil
+	case protocol.MessageLspSignature:
+		var request protocol.LspSignatureRequest
+		if err := json.Unmarshal(message.Payload, &request); err != nil {
+			return protocol.Message{}, fmt.Errorf("invalid lsp request: %w", err)
+		}
+		result, err := h.lsp.SignatureHelp(ctx, message.WorkspaceID, workspace.Root, request.Path, request.Line, request.Character)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		payload, err := json.Marshal(result)
+		if err != nil {
+			return protocol.Message{}, err
+		}
+		return protocol.Message{Type: protocol.MessageLspSignatureResult, WorkspaceID: message.WorkspaceID, TaskID: message.TaskID, Payload: payload}, nil
 	default:
 		return protocol.Message{}, fmt.Errorf("unsupported message type %q", message.Type)
 	}
